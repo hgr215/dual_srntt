@@ -17,6 +17,7 @@ def str2bool(v):
 parser = argparse.ArgumentParser(description='SRNTT')
 
 # init parameters
+parser.add_argument('--fast_swap', type=str2bool, default=True, help="whether use fast swap scheme.")
 parser.add_argument('--is_train', type=str2bool, default=False)
 parser.add_argument('--srntt_model_path', type=str, default='SRNTT/models/SRNTT')
 parser.add_argument('--vgg19_model_path', type=str, default='SRNTT/models/VGG19/imagenet-vgg-verydeep-19.mat')
@@ -95,7 +96,8 @@ if args.is_train:
             vgg19_model_path=args.vgg19_model_path,
             save_dir=args.save_dir,
             num_res_blocks=args.num_res_blocks,
-            is_gan=args.is_gan
+            is_gan=args.is_gan,
+            is_fast=args.fast_swap
         )
 
     else:
@@ -107,6 +109,7 @@ if args.is_train:
             save_dir=args.save_dir,
             num_res_blocks=args.num_res_blocks,
             is_gan=args.is_gan,
+            is_fast=args.fast_swap,
             scale=2.0
         )
 
@@ -156,6 +159,7 @@ else:
             vgg19_model_path=args.vgg19_model_path,
             save_dir=args.save_dir,
             num_res_blocks=args.num_res_blocks,
+            is_fast=args.fast_swap
         )
     else:
         from SRNTT.model_x2 import *
@@ -165,6 +169,7 @@ else:
             vgg19_model_path=args.vgg19_model_path,
             save_dir=args.save_dir,
             num_res_blocks=args.num_res_blocks,
+            is_fast=args.fast_swap,
             scale=2.0
         )
     many_test = True
@@ -189,6 +194,7 @@ else:
         print(inputs)
         assert len(inputs) == len(refs)
         for filename in inputs:
+            print('-----    %s:' % filename)
             path_i = os.path.join(args.input_dir, filename)
             path_r = os.path.join(args.ref_dir, filename)
             if os.path.exists(path_r):

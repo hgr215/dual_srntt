@@ -10,7 +10,7 @@ from scipy.misc import imread, imresize
 import argparse
 
 environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 parser = argparse.ArgumentParser('offline_patchMatch_textureSwap')
 parser.add_argument('--data_folder', type=str, default='data/train/CUFED',
@@ -24,7 +24,7 @@ print('' == args.save_dir)
 scale = args.scale
 print('scale:%d' % scale)
 if 'CUFED' in data_folder:
-    input_size = 160 // scale
+    input_size = 320 // scale
     ref_size = input_size
 elif 'DIV2K' in data_folder:
     input_size = 320 // scale
@@ -105,3 +105,5 @@ with tf.Session(config=config) as sess:
 
         # save maps
         np.savez(file_name, target_map=maps, weights=weights, correspondence=correspondence)
+        # np.savez(file_name, target_map=maps, correspondence=correspondence)
+        # np.savez(file_name, correspondence=correspondence)

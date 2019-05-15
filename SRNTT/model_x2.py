@@ -51,7 +51,8 @@ class SRNTT(object):
             save_dir=None,
             num_res_blocks=16,
             is_gan=True,
-            scale=2.0
+            scale=2.0,
+            is_fast=True,
     ):
         self.srntt_model_path = srntt_model_path
         self.vgg19_model_path = vgg19_model_path
@@ -60,6 +61,7 @@ class SRNTT(object):
         self.is_model_built = False
         self.is_gan = is_gan
         self.scale = scale
+        self.is_fast = is_fast
         download_vgg19(self.vgg19_model_path)
 
     def model(
@@ -844,6 +846,7 @@ class SRNTT(object):
             save_ref=True,
             step=None
     ):
+        matching_layer = ['relu3_1', 'relu2_1', 'relu1_1']
         logging.info('Testing mode')
 
         if ref_dir is None:
@@ -908,6 +911,16 @@ class SRNTT(object):
         else:
             grids = None
             img_input = np.expand_dims(img_input, axis=0)
+
+        # -- relu3_1 content feature size: when vgg19 is 'same' padding
+        if self.is_fast:
+            input_f_size = list(img_input.shape)
+            input_f_size[1] //= (4 // 2)
+            input_f_size[2] //= (4 // 2)
+            input_f_size[3] = 256
+            print('input_f_size: ', input_f_size)
+        else:
+            input_f_size = None
 
         # check ref_dir
         img_ref = []
@@ -1001,7 +1014,8 @@ class SRNTT(object):
 
             # instant of Swap()
             logging.info('Initialize the swapper')
-            self.swaper = Swap(sess=self.sess)
+            self.swaper = Swap(sess=self.sess, input_size=input_f_size,
+                               matching_layer=matching_layer)  # --original swap.py should be changed.
 
             logging.info('Loading models ...')
             self.sess.run(tf.global_variables_initializer())
@@ -1067,7 +1081,7 @@ class SRNTT(object):
                      ' Start testing '
                      '**********')
 
-        matching_layer = ['relu3_1', 'relu2_1', 'relu1_1']
+        # matching_layer = ['relu3_1', 'relu2_1', 'relu1_1']
 
         logging.info('Get VGG19 Feature Maps')
 
