@@ -5,8 +5,14 @@ import time
 
 
 class Swap(object):
-    def __init__(self, patch_size=3, stride=1, sess=None):
+    def __init__(self, input_size, patch_size=3, stride=1, sess=None, matching_layer=['relu3_1', 'relu2_1', 'relu1_1']):
+        '''
+        require same input size, once Swap built.
+        :param sess:
+        input_size: (1,height,width,channel) of content feature.
+        '''
         self.patch_size = patch_size
+        self.input_size = np.array(input_size, dtype=np.int32)  # used for fast-swap scheme.scheme
         self.stride = stride
         self.sess = sess
         self.content = None
@@ -17,7 +23,8 @@ class Swap(object):
                                           name='swap_filter')
 
         self.tconv_input = tf.placeholder(dtype=tf.float32, shape=[1, None, None, None], name='swap_t_input')
-        self.t_conv_filter = tf.placeholder(dtype=tf.float32, shape=[None, None, None, None])  # --may have problem?
+        self.t_conv_filter = tf.placeholder(dtype=tf.float32, shape=[None, None, None, None],
+                                            name='tconv_filter')  # --may have problem?
         # self.t_conv_filter = tf.placeholder(dtype=tf.float32, shape=[self.patch_size, self.patch_size, None, None])
         self.conv = tf.nn.conv2d(
             input=self.conv_input,
@@ -26,15 +33,138 @@ class Swap(object):
             padding='VALID',  # --no padding
             name='feature_patchmatch'
         )
+        # self.output_hw = 1, patch_size + (hi - 1) * stride, patch_size + (wi - 1) * stride, ci  # --cal out size
         self.t_conv = tf.nn.conv2d_transpose(
-            input=self.tconv_input,
+            value=self.tconv_input,
+            output_shape=self.input_size,
             filter=self.t_conv_filter,
-            stride=(1, self.stride, self.stride, 1),
+            strides=(1, self.stride, self.stride, 1),
             padding='VALID',
             name='swap_transpose_conv'
         )
+        # cal overlap:
+        _, h_c, w_c, channels = self.input_size
+        over_in = np.ones((1, (h_c - patch_size) // stride + 1, (w_c - patch_size) // stride + 1, 1))
+        # over_in_tf = tf.placeholder(dtype=tf.float32, shape=over_in.shape)
+        # over_filter_tf = tf.placeholder(dtype=tf.float32, shape=(patch_size, patch_size, 1, 1))
+        over_map = tf.nn.conv2d_transpose(
+            value=self.tconv_input,
+            output_shape=[1, h_c, w_c, 1],
+            filter=self.t_conv_filter,
+            strides=(1, stride, stride, 1),
+            padding='VALID',
+            name='swap_transpose_conv_over'
+        )
+        self.over_map = over_map.eval(
+            {self.tconv_input: over_in, self.t_conv_filter: np.ones((patch_size, patch_size, 1, 1))}, session=self.sess)
+        print('overmap.shape: ', self.over_map.shape)
 
-    def style2patches(self, feature_map=None):
+        # extraction op:
+        self.patch_extr_ops = {}  # --{patch_size:op}
+        patches_tf = tf.image.extract_image_patches(
+            images=self.tconv_input,
+            ksizes=[1, self.patch_size, self.patch_size, 1],
+            strides=[1, self.stride, self.stride, 1],
+            rates=[1, 1, 1, 1],
+            padding='VALID',
+            name='patches_extraction%d' % self.patch_size
+        )
+        patches_tf = tf.reshape(patches_tf, (-1, self.patch_size, self.patch_size, channels))
+        patches_tf = tf.transpose(patches_tf, (1, 2, 3, 0))
+        self.patch_extr_ops[self.patch_size] = patches_tf
+
+        if matching_layer == ['relu3_1', 'relu2_1', 'relu1_1']:
+            pass
+            ratio = 1
+            self.other_tconv = []
+            self.other_osize = []
+            self.over_map_other = []
+            for ii in range(2):
+                ratio *= 2
+                self.other_osize.append((self.input_size * [1, ratio, ratio, 1 / ratio]).astype(np.int32))
+                self.other_tconv.append(
+                    tf.nn.conv2d_transpose(
+                        value=self.tconv_input,
+                        output_shape=self.other_osize[ii],
+                        filter=self.t_conv_filter,
+                        strides=(1, self.stride * ratio, self.stride * ratio, 1),
+                        padding='VALID',
+                        name='swap_transpose_conv_%d' % (ii + 1)
+                    )
+                )
+                # other layer overmap:
+                over_map_t = tf.nn.conv2d_transpose(
+                    value=self.tconv_input,
+                    output_shape=[1, h_c * ratio, w_c * ratio, 1],
+                    filter=self.t_conv_filter,
+                    strides=(1, stride * ratio, stride * ratio, 1),
+                    padding='VALID',
+                    name='swap_transpose_conv_over_%d' % ii
+                )
+                over_map_t_np = over_map_t.eval({self.tconv_input: over_in,
+                                                 self.t_conv_filter: np.ones(
+                                                     (patch_size * ratio, patch_size * ratio, 1, 1))},
+                                                session=self.sess)
+                print('overmap.shape', over_map_t_np.shape)
+                self.over_map_other.append(over_map_t_np)
+
+                # other extraction ops:
+                patches_tf = tf.image.extract_image_patches(
+                    images=self.tconv_input,
+                    ksizes=[1, self.patch_size * ratio, self.patch_size * ratio, 1],
+                    strides=[1, self.stride * ratio, self.stride * ratio, 1],
+                    rates=[1, 1, 1, 1],
+                    padding='VALID',
+                    name='patches_extraction%d' % (self.patch_size * ratio)
+                )
+                patches_tf = tf.reshape(patches_tf,
+                                        (-1, self.patch_size * ratio, self.patch_size * ratio, channels // ratio))
+                patches_tf = tf.transpose(patches_tf, (1, 2, 3, 0))
+                self.patch_extr_ops[self.patch_size * ratio] = patches_tf
+        else:
+            print('cannot cal input size with %s, for the t_conv' % matching_layer)
+            exit(0)
+
+        # self.t_conv=tf.layers.conv2d_transpose(
+        #     inputs=self.tconv_input,
+        #     filters=self.t_conv_filter,
+        #     kernel_size=self.patch_size,
+        #     strides=(self.stride,self.stride),
+        #     padding='valid',
+        #     use_bias=False,
+        #
+        #
+        # )
+
+    def style2patches(self, feature_map=None, ):
+        """
+        sample patches from the style (reference) map
+        :param feature_map: array, [H, W, C]
+        :return: array (conv kernel), [H, W, C_in, C_out]  # --C_in = C
+        """
+        if feature_map is None:
+            feature_map = self.style
+        h, w, c = feature_map.shape
+        t0 = time.time()
+        # patches_tf = tf.image.extract_image_patches(
+        #     images=feature_map[np.newaxis, ...],
+        #     ksizes=[1, self.patch_size, self.patch_size, 1],
+        #     strides=[1, self.stride, self.stride, 1],
+        #     rates=[1, 1, 1, 1],
+        #     padding='VALID',
+        #     name='patches_extraction'
+        # )
+        if self.patch_size not in self.patch_extr_ops:
+            print('no extr op for %d' % self.patch_size)
+            exit(0)
+
+        patches_tf = self.patch_extr_ops[self.patch_size]
+        # print('op building time: %.4f' % (time.time() - t0))
+        patches = patches_tf.eval({self.tconv_input: feature_map[np.newaxis, ...]}, session=self.sess)
+        print('op building + eval time: %.4f' % (time.time() - t0))
+        return patches
+
+    def style2patches_slow(self, feature_map=None):
         """
         sample patches from the style (reference) map
         :param feature_map: array, [H, W, C]
@@ -63,6 +193,8 @@ class Swap(object):
         :param is_weight, bool, whether compute weights
         :return: swapped feature maps - [3D array, ...], matching weights - 2D array, matching idx - 2D array
         """
+        print('content.shape:', content.shape)
+
         assert isinstance(content, np.ndarray)
         self.content = np.squeeze(content)
         assert len(self.content.shape) == 3
@@ -138,7 +270,7 @@ class Swap(object):
         '''my swap'''
         del max_val
         # max_idx = max_idx[np.newaxis, ...]  # shape of (1,h,w)
-        map_t = np.zeros_like(self.content)
+        map_t = np.zeros_like(self.content)[np.newaxis, ...]
         maps = []
         if other_styles:
             map_t_other = []
@@ -152,72 +284,50 @@ class Swap(object):
                 self.stride = stride * ratio
                 patches_style_other.append(np.concatenate(list(map(self.style2patches, style)), axis=-1))
                 map_t_other.append(
-                    np.zeros((self.content.shape[0] * ratio, self.content.shape[1] * ratio, style[0].shape[2])))
+                    np.zeros((1, self.content.shape[0] * ratio, self.content.shape[1] * ratio, style[0].shape[2])))
 
         for idx in range(0, num_out_channels, batch_size):
-            scores_b = np.zeros((h_co, w_co, batch_size + 1))  # last channel is for indexing convenience
+            filter_b = patches_style[:, :, :, idx * batch_size:(idx + 1) * batch_size]
+            print('batch_size: %d' % batch_size)
+            num_patches_b = filter_b.shape[-1]  # --real batch_size
+            scores_b = np.zeros((h_co, w_co, num_patches_b + 1))  # last channel is for indexing convenience
             max_idx_b = max_idx.copy()
             coor_out = (max_idx < idx) + (max_idx >= (idx + batch_size))  # (x,y) whose patch_idx not in batch
             max_idx_b[~coor_out] -= idx * batch_size
             max_idx_b[coor_out] = -1
             max_idx_b = max_idx_b.reshape((-1,))
-            scores_b = scores_b.reshape((-1, batch_size + 1))
+            scores_b = scores_b.reshape((-1, num_patches_b + 1))
             scores_b[range(h_co * w_co), max_idx_b[range(h_co * w_co)]] = 1
-            scores_b = scores_b.reshape((h_co, w_co, batch_size + 1))
+            scores_b = scores_b.reshape((h_co, w_co, num_patches_b + 1))
             scores_b = scores_b[:, :, :-1]  # remove last channel
 
+            # print('patch_style.shape: ' , patches_style.shape)
             # condition layer swap
-            filter_b = patches_style[:, :, :, idx * batch_size:(idx + 1) * batch_size]
-            map_t += self.t_conv.eval({self.tconv_input: scores_b[np.newaxis, ...], self.conv_filter: filter_b})
+            print('filter_b.shape: ', filter_b.shape, scores_b[np.newaxis, ...].shape)
+            map_t += self.t_conv.eval({self.tconv_input: scores_b[np.newaxis, ...], self.t_conv_filter: filter_b},
+                                      session=self.sess)
             # other layer swap:
             if other_styles:
                 for ii in range(len(map_t_other)):
                     filter_b = patches_style_other[ii][:, :, :, idx * batch_size:(idx + 1) * batch_size]
-                    map_t_other[ii] += self.t_conv.eval(
-                        {self.tconv_input: scores_b[np.newaxis, ...], self.conv_filter: filter_b})
+                    map_t_other[ii] += self.other_tconv[ii].eval(
+                        {self.tconv_input: scores_b[np.newaxis, ...], self.t_conv_filter: filter_b}, session=self.sess)
 
         # cal overlap (flatten t_conv, like in pytorch swap project)
-        over_input = np.ones((1, h_co, w_co, 1))
-        over_filter = np.ones((patches_style.shape[0], patches_style.shape[1], 1, 1))
-        over_map = self.t_conv.eval({self.tconv_input: over_input, self.conv_filter: over_filter})
-        map_t /= over_map
+        # over_input = np.ones((1, h_co, w_co, 1))
+        # over_filter = np.ones((patches_style.shape[0], patches_style.shape[1], 1, 1))
+        # over_map = self.t_conv.eval({self.tconv_input: over_input, self.t_conv_filter: over_filter},
+        #                             session=self.sess)
+        map_t /= self.over_map
+        maps.append(map_t.squeeze())
         for ii in range(len(map_t_other)):
-            over_filter = np.ones((patches_style_other[ii].shape[0], patches_style_other[ii].shape[1], 1, 1))
-            over_map = self.t_conv.eval({self.tconv_input: over_input, self.conv_filter: over_filter})
-            map_t_other[ii] /= over_map
-
-        maps.append(map_t)
-        for ii in range(len(map_t_other)):
-            maps.append(map_t_other[ii])
+            # over_filter = np.ones((patches_style_other[ii].shape[0], patches_style_other[ii].shape[1], 1, 1))
+            # over_map = self.other_tconv[ii].eval({self.tconv_input: over_input, self.t_conv_filter: over_filter},
+            #                                      session=self.sess)
+            map_t_other[ii] /= self.over_map_other[ii]
+            maps.append(map_t_other[ii].squeeze())
 
         weights = None
-
-        # other styles:
-        # if other_styles:
-        #     for style in other_styles:
-        #         ratio = float(style[0].shape[0]) / self.style[0].shape[0]
-        #         assert int(ratio) == ratio
-        #         ratio = int(ratio)
-        #         self.patch_size = patch_size * ratio
-        #         self.stride = stride * ratio
-        #         patches_style = np.concatenate(list(map(self.style2patches, style)), axis=-1)
-        #
-        #         map_t = np.zeros((self.content.shape[0] * ratio, self.content.shape[1] * ratio, style[0].shape[2]))
-        #
-        #         for idx in range(0, num_out_channels, batch_size):
-        #             scores_b = np.zeros((h_co, w_co, batch_size + 1))  # last channel is for indexing convenience
-        #             max_idx_b = max_idx.copy()
-        #             max_idx_b[max_idx < idx * batch_size + max_idx >= (idx + 1) * batch_size] = -1
-        #             max_idx_b = max_idx_b.reshape((-1,))
-        #             scores_b = scores_b.reshape((-1, batch_size + 1))
-        #             scores_b[range(h_co * w_co), max_idx_b[range(h_co * w_co)]] = 1
-        #             scores_b = scores_b.reshape((h_co, w_co, batch_size + 1))
-        #             scores_b = scores_b[:, :, :-1]  # remove last channel
-        #
-        #             filter_b = patches_style[:, :, :, idx * batch_size:(idx + 1) * batch_size]
-        #             map_t += self.t_conv.eval({self.tconv_input: scores_b[np.newaxis, ...], self.conv_filter: filter_b})
-        #         maps.append(map_t)
-
         '''end'''
 
         # compute matching similarity (inner product)
@@ -232,51 +342,5 @@ class Swap(object):
         # else:
         #     weights = None
         #     del patches_content_normed, patches_style_normed
-        if False:
-            weights = None
-            del patches_style_normed
-
-            # stitch matches style patches according to content spacial structure
-            t_s = time.time()
-            print('\tSwapping ...')
-            swap_time = 0
-            maps = []
-            target_map = np.zeros_like(self.content)
-            count_map = np.zeros(shape=target_map.shape[:2])
-            for i in range(max_idx.shape[0]):
-                for j in range(max_idx.shape[1]):
-                    target_map[i:i + self.patch_size, j:j + self.patch_size, :] += patches_style[:, :, :, max_idx[i, j]]
-                    count_map[i:i + self.patch_size, j:j + self.patch_size] += 1.0
-                    swap_time += 1
-            target_map = np.transpose(target_map, axes=(2, 0, 1)) / count_map
-            target_map = np.transpose(target_map, axes=(1, 2, 0))
-            maps.append(target_map)
-            print('swaped %d times' % swap_time)
-
-            # stitch other styles
-            patch_size, stride = self.patch_size, self.stride
-            if other_styles:
-                for style in other_styles:
-                    # print(float(style[0].shape[0]),self.style[0].shape[0])
-                    ratio = float(style[0].shape[0]) / self.style[0].shape[0]
-                    assert int(ratio) == ratio
-                    ratio = int(ratio)
-                    self.patch_size = patch_size * ratio
-                    self.stride = stride * ratio
-                    patches_style = np.concatenate(list(map(self.style2patches, style)), axis=-1)
-                    target_map = np.zeros(
-                        (self.content.shape[0] * ratio, self.content.shape[1] * ratio, style[0].shape[2]))
-                    count_map = np.zeros(shape=target_map.shape[:2])
-                    for i in range(max_idx.shape[0]):
-                        for j in range(max_idx.shape[1]):
-                            target_map[i * ratio:i * ratio + self.patch_size, j * ratio:j * ratio + self.patch_size,
-                            :] += patches_style[:, :, :, max_idx[i, j]]
-                            count_map[i * ratio:i * ratio + self.patch_size,
-                            j * ratio:j * ratio + self.patch_size] += 1.0
-                    target_map = np.transpose(target_map, axes=(2, 0, 1)) / count_map
-                    target_map = np.transpose(target_map, axes=(1, 2, 0))
-                    maps.append(target_map)
-            print('patch swaping time: %0.2f s.' % (time.time() - t_s))
-            print('total time' % time.time() - t_e)
 
         return maps, weights, max_idx
