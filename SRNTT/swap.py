@@ -179,7 +179,7 @@ class Swap(object):
                 patches.append(feature_map[ind_row:ind_row + self.patch_size, ind_col:ind_col + self.patch_size, :])
         return np.stack(patches, axis=-1)
 
-    def conditional_swap_multi_layer(self, content, style, condition, patch_size=3, stride=1, other_styles=None,
+    def conditional_swap_multi_layer(self, content, style, condition, other_styles=None,
                                      is_weight=False):
         """
         feature swapping with multiple references on multiple feature layers
@@ -220,8 +220,8 @@ class Swap(object):
             other_styles = [[np.squeeze(s) for s in styles] for styles in other_styles]
             assert all([all([len(s.shape) == 3 for s in styles]) for styles in other_styles])
 
-        self.patch_size = patch_size
-        self.stride = stride
+        patch_size = self.patch_size
+        stride =self.stride
 
         # split content, style, and condition into patches
         t_e = time.time()

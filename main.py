@@ -1,7 +1,7 @@
 import os
 import argparse
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "4"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 
@@ -19,8 +19,10 @@ parser = argparse.ArgumentParser(description='SRNTT')
 # init parameters
 parser.add_argument('--fast_swap', type=str2bool, default=True, help="whether use fast swap scheme.")
 parser.add_argument('--is_train', type=str2bool, default=False)
-parser.add_argument('--srntt_model_path', type=str, default='SRNTT/models/SRNTT')
-parser.add_argument('--vgg19_model_path', type=str, default='SRNTT/models/VGG19/imagenet-vgg-verydeep-19.mat')
+# parser.add_argument('--srntt_model_path', type=str, default='SRNTT/models/SRNTT')
+# parser.add_argument('--vgg19_model_path', type=str, default='SRNTT/models/VGG19/imagenet-vgg-verydeep-19.mat')
+parser.add_argument('--srntt_model_path', type=str, default='his_model/SRNTT')
+parser.add_argument('--vgg19_model_path', type=str, default='his_model/VGG19/imagenet-vgg-verydeep-19.mat')
 parser.add_argument('--save_dir', type=str, default=None,
                     help='dir of saving intermediate training results(your own model to train and test')
 parser.add_argument('--num_res_blocks', type=int, default=16, help='number of residual blocks')
@@ -56,6 +58,8 @@ parser.add_argument('--is_gan', type=str2bool, default=True, help='whether to tr
 parser.add_argument('--load_step', type=int, default=0, help='if you load pretrained model, which step?')
 
 # test parameters
+parser.add_argument('--patch_size', type=int, default=3)
+parser.add_argument('--stride', type=int, default=1)
 parser.add_argument('--many_test', action='store_true',
                     help='If true, input_dir is an dir of many, else input_dir is a image')
 parser.add_argument('--x2', action='store_true',
@@ -97,7 +101,9 @@ if args.is_train:
             save_dir=args.save_dir,
             num_res_blocks=args.num_res_blocks,
             is_gan=args.is_gan,
-            is_fast=args.fast_swap
+            is_fast=args.fast_swap,
+            patch_size=args.patch_size,
+            stride=args.stride
         )
 
     else:
@@ -110,7 +116,9 @@ if args.is_train:
             num_res_blocks=args.num_res_blocks,
             is_gan=args.is_gan,
             is_fast=args.fast_swap,
-            scale=2.0
+            scale=2.0,
+            patch_size=args.patch_size,
+            stride=args.stride
         )
 
     srntt.train(
@@ -159,7 +167,9 @@ else:
             vgg19_model_path=args.vgg19_model_path,
             save_dir=args.save_dir,
             num_res_blocks=args.num_res_blocks,
-            is_fast=args.fast_swap
+            # is_fast=args.fast_swap,
+            # patch_size=args.patch_size,
+            # stride=args.stride
         )
     else:
         from SRNTT.model_x2 import *
@@ -170,7 +180,9 @@ else:
             save_dir=args.save_dir,
             num_res_blocks=args.num_res_blocks,
             is_fast=args.fast_swap,
-            scale=2.0
+            scale=2.0,
+            patch_size=args.patch_size,
+            stride=args.stride
         )
     many_test = True
     if not many_test:

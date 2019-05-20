@@ -53,6 +53,8 @@ class SRNTT(object):
             is_gan=True,
             scale=2.0,
             is_fast=True,
+            patch_size=3,
+            stride=1
     ):
         self.srntt_model_path = srntt_model_path
         self.vgg19_model_path = vgg19_model_path
@@ -62,6 +64,8 @@ class SRNTT(object):
         self.is_gan = is_gan
         self.scale = scale
         self.is_fast = is_fast
+        self.patch_size=patch_size
+        self.stride=stride
         download_vgg19(self.vgg19_model_path)
 
     def model(
@@ -1015,8 +1019,8 @@ class SRNTT(object):
             # instant of Swap()
             logging.info('Initialize the swapper')
             self.swaper = Swap(sess=self.sess, input_size=input_f_size,
-                               matching_layer=matching_layer)  # --original swap.py should be changed.
-
+                               matching_layer=matching_layer,patch_size=self.patch_size,stride=self.stride
+                               )  # --original swap.py should be changed.
             logging.info('Loading models ...')
             self.sess.run(tf.global_variables_initializer())
 

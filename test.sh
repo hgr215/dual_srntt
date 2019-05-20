@@ -5,7 +5,7 @@ echo
 
 #hgr
 
-## test on default SRNTT model
+# test on default SRNTT model
 #python main.py \
 #    --is_train False \
 #    --input_dir data/test/input \
@@ -40,5 +40,7 @@ python main.py \
     --use_init_model_only False \
     --result_dir results\
     --save_dir demo_training_srntt\
-    --load_step 35\
-    --is_original_image True
+    --load_step 26\
+    --is_original_image True\
+    --patch_size 10\
+    --stride 5
