@@ -37,6 +37,19 @@ python main.py \
     --x2_train
 #    --is_gan True
 
+python main.py \
+    --is_train True \
+    --input_dir data/train/${training_set}/input \
+    --ref_dir data/train/${training_set}/ref \
+    --map_dir data/train/${training_set}/map_321_2x \
+    --use_pretrained_model False \
+    --num_init_epochs 2 \
+    --num_epochs 35 \
+    --save_dir demo_training_srntt \
+    --x2_train
+#    --is_gan True
+
+
 ## train based on a pre-trained model
 # load_step: step to load; num_epochs: epochs remaining
 #python main.py \

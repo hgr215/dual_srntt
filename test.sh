@@ -42,5 +42,5 @@ python main.py \
     --save_dir demo_training_srntt\
     --load_step 26\
     --is_original_image True\
-    --patch_size 10\
-    --stride 5
+    --patch_size 3\
+    --stride 1

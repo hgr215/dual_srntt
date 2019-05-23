@@ -221,7 +221,7 @@ class Swap(object):
             assert all([all([len(s.shape) == 3 for s in styles]) for styles in other_styles])
 
         patch_size = self.patch_size
-        stride =self.stride
+        stride = self.stride
 
         # split content, style, and condition into patches
         t_e = time.time()
@@ -268,6 +268,7 @@ class Swap(object):
         print('patch match time: %0.2f s.' % (time.time() - t_m))
 
         '''my swap'''
+        t_s = time.time()
         del max_val
         # max_idx = max_idx[np.newaxis, ...]  # shape of (1,h,w)
         map_t = np.zeros_like(self.content)[np.newaxis, ...]
@@ -285,7 +286,7 @@ class Swap(object):
                 patches_style_other.append(np.concatenate(list(map(self.style2patches, style)), axis=-1))
                 map_t_other.append(
                     np.zeros((1, self.content.shape[0] * ratio, self.content.shape[1] * ratio, style[0].shape[2])))
-
+        print('swap time middle: %.4f' % (time.time() - t_s))
         for idx in range(0, num_out_channels, batch_size):
             filter_b = patches_style[:, :, :, idx * batch_size:(idx + 1) * batch_size]
             print('batch_size: %d' % batch_size)
@@ -300,18 +301,21 @@ class Swap(object):
             scores_b[range(h_co * w_co), max_idx_b[range(h_co * w_co)]] = 1
             scores_b = scores_b.reshape((h_co, w_co, num_patches_b + 1))
             scores_b = scores_b[:, :, :-1]  # remove last channel
-
+            print('swap time middle: %.4f' % (time.time() - t_s))
             # print('patch_style.shape: ' , patches_style.shape)
             # condition layer swap
             print('filter_b.shape: ', filter_b.shape, scores_b[np.newaxis, ...].shape)
             map_t += self.t_conv.eval({self.tconv_input: scores_b[np.newaxis, ...], self.t_conv_filter: filter_b},
                                       session=self.sess)
+            print('swap time middle: %.4f' % (time.time() - t_s))
             # other layer swap:
             if other_styles:
                 for ii in range(len(map_t_other)):
+                    print('swap time middle: %.4f' % (time.time() - t_s))
                     filter_b = patches_style_other[ii][:, :, :, idx * batch_size:(idx + 1) * batch_size]
                     map_t_other[ii] += self.other_tconv[ii].eval(
                         {self.tconv_input: scores_b[np.newaxis, ...], self.t_conv_filter: filter_b}, session=self.sess)
+                    print('swap time middle: %.4f' % (time.time() - t_s))
 
         # cal overlap (flatten t_conv, like in pytorch swap project)
         # over_input = np.ones((1, h_co, w_co, 1))
@@ -326,7 +330,9 @@ class Swap(object):
             #                                      session=self.sess)
             map_t_other[ii] /= self.over_map_other[ii]
             maps.append(map_t_other[ii].squeeze())
+        print('swap time middle: %.4f' % (time.time() - t_s))
 
+        print('patch swap time: %.4f' % (time.time() - t_s))
         weights = None
         '''end'''
 
@@ -342,5 +348,9 @@ class Swap(object):
         # else:
         #     weights = None
         #     del patches_content_normed, patches_style_normed
+
+        # restore para
+        self.patch_size = patch_size
+        self.stride = stride
 
         return maps, weights, max_idx

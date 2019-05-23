@@ -143,22 +143,22 @@ if args.is_train:
         step=args.load_step
     )
 else:
-    if args.save_dir is not None:
-        # read recorded arguments
-        fixed_arguments = ['srntt_model_path', 'vgg19_model_path', 'save_dir', 'num_res_blocks', 'use_weight_map']
-        if os.path.exists(os.path.join(args.save_dir, 'arguments.txt')):
-            with open(os.path.join(args.save_dir, 'arguments.txt'), 'r') as f:
-                for arg, line in zip(sorted(vars(args)), f.readlines()):
-                    arg_name, arg_value = line.strip().split('\t')
-                    if arg_name in fixed_arguments:
-                        fixed_arguments.remove(arg_name)
-                        try:
-                            if isinstance(getattr(args, arg_name), bool):
-                                setattr(args, arg_name, str2bool(arg_value))
-                            else:
-                                setattr(args, arg_name, type(getattr(args, arg_name))(arg_value))
-                        except:
-                            print('Unmatched arg_name: %s!' % arg_name)
+    # if args.save_dir is not None:
+    #     # read recorded arguments
+    #     fixed_arguments = ['srntt_model_path', 'vgg19_model_path', 'save_dir', 'num_res_blocks', 'use_weight_map']
+    #     if os.path.exists(os.path.join(args.save_dir, 'arguments.txt')):
+    #         with open(os.path.join(args.save_dir, 'arguments.txt'), 'r') as f:
+    #             for arg, line in zip(sorted(vars(args)), f.readlines()):
+    #                 arg_name, arg_value = line.strip().split('\t')
+    #                 if arg_name in fixed_arguments:
+    #                     fixed_arguments.remove(arg_name)
+    #                     try:
+    #                         if isinstance(getattr(args, arg_name), bool):
+    #                             setattr(args, arg_name, str2bool(arg_value))
+    #                         else:
+    #                             setattr(args, arg_name, type(getattr(args, arg_name))(arg_value))
+    #                     except:
+    #                         print('Unmatched arg_name: %s!' % arg_name)
     if not x2_train:
         from SRNTT.model import *
 
@@ -173,7 +173,7 @@ else:
         )
     else:
         from SRNTT.model_x2 import *
-
+        print(args.vgg19_model_path)
         srntt = SRNTT(
             srntt_model_path=args.srntt_model_path,
             vgg19_model_path=args.vgg19_model_path,

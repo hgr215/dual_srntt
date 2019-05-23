@@ -46,8 +46,10 @@ class SRNTT(object):
 
     def __init__(
             self,
-            srntt_model_path='models/SRNTT',
-            vgg19_model_path='models/VGG19/imagenet-vgg-verydeep-19.mat',
+            # srntt_model_path='models/SRNTT',
+            srntt_model_path='../his_model/SRNTT',
+            # vgg19_model_path='models/VGG19/imagenet-vgg-verydeep-19.mat',
+            vgg19_model_path='../his_model/VGG19/imagenet-vgg-verydeep-19.mat',
             save_dir=None,
             num_res_blocks=16,
             is_gan=True,
@@ -320,6 +322,7 @@ class SRNTT(object):
             use_lower_layers_in_per_loss=False,
             step=None
     ):
+        load_patch=False  # If true, load patches from map_321..., else, gene new one
         scale = self.scale
         if np.sqrt(batch_size) != int(np.sqrt(batch_size)):
             logging.error('The batch size must be the power of an integer.')

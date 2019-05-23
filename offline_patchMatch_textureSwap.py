@@ -8,17 +8,23 @@ from SRNTT.vgg19 import *
 from SRNTT.swap import *
 from scipy.misc import imread, imresize
 import argparse
+import time
 
 environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 parser = argparse.ArgumentParser('offline_patchMatch_textureSwap')
 parser.add_argument('--data_folder', type=str, default='data/train/CUFED',
                     help='The dir of dataset: CUFED or DIV2K or dual')
 parser.add_argument('--scale', type=int, default=2)
 parser.add_argument('--save_dir', type=str, default='', help='If not empty, save maps in it')
+parser.add_argument('--patch_size', default=3)
+parser.add_argument('--stride', default=1)
 args = parser.parse_args()
 
+patch_size = args.patch_size
+stride = args.stride
+print('Patch size: %d, stride: %d' % (patch_size, stride))
 data_folder = args.data_folder
 print('' == args.save_dir)
 scale = args.scale
@@ -32,7 +38,7 @@ elif 'DIV2K' in data_folder:
 elif 'dual' in data_folder:  # 320 in ./input (label) and 160 in ./ref (long)
     # input_size = 320 // scale
     input_size = 160 // scale
-    ref_size = input_size // scale
+    ref_size = input_size // scale  # --not the real ref size
 
 else:
     raise Exception('Unrecognized dataset!')
@@ -60,16 +66,24 @@ ref_files = sorted(glob(join(ref_path, '*.png')))
 n_files = len(input_files)
 assert n_files == len(ref_files)
 
-vgg19_model_path = 'SRNTT/models/VGG19/imagenet-vgg-verydeep-19.mat'
+# vgg19_model_path = 'SRNTT/models/VGG19/imagenet-vgg-verydeep-19.mat'
+vgg19_model_path = 'his_model/VGG19/imagenet-vgg-verydeep-19.mat'
 tf_input = tf.placeholder(dtype=tf.float32, shape=[1, input_size, input_size, 3])
 srntt = SRNTT(vgg19_model_path=vgg19_model_path)
 net_upscale, _ = srntt.model(tf_input / 127.5 - 1, is_train=False)
 net_vgg19 = VGG19(model_path=vgg19_model_path)
-swaper = Swap()
+# swaper = Swap()
+if matching_layer == ['relu3_1', 'relu2_1', 'relu1_1']:
+    input_f_size = [1, input_size * scale // 4, input_size * scale // 4, 256]
+else:
+    print('not support', matching_layer)
+    exit(0)
 
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
 with tf.Session(config=config) as sess:
+    swaper = Swap(sess=sess, input_size=input_f_size, matching_layer=matching_layer, patch_size=patch_size,
+                  stride=stride)
     tf.global_variables_initializer().run()
     print_format = '%%0%dd/%%0%dd' % (len(str(n_files)), len(str(n_files)))
     for i in range(n_files):
@@ -104,6 +118,8 @@ with tf.Session(config=config) as sess:
         )
 
         # save maps
+        t = time.time()
         np.savez(file_name, target_map=maps, weights=weights, correspondence=correspondence)
+        print('save time: %.4f' % (time.time() - t))
         # np.savez(file_name, target_map=maps, correspondence=correspondence)
         # np.savez(file_name, correspondence=correspondence)
