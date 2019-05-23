@@ -10,13 +10,15 @@ from scipy.misc import imread, imresize
 import argparse
 
 environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 parser = argparse.ArgumentParser('offline_patchMatch_textureSwap')
 parser.add_argument('--data_folder', type=str, default='data/train/CUFED',
                     help='The dir of dataset: CUFED or DIV2K or dual')
 parser.add_argument('--scale', type=int, default=2)
 parser.add_argument('--save_dir', type=str, default='', help='If not empty, save maps in it')
+parser.add_argument('--patch_size', type=int, default=3)
+parser.add_argument('--stride', type=int, default=1)
 args = parser.parse_args()
 
 data_folder = args.data_folder
@@ -36,6 +38,7 @@ elif 'dual' in data_folder:  # 320 in ./input (label) and 160 in ./ref (long)
 
 else:
     raise Exception('Unrecognized dataset!')
+input_f_size = (1, input_size * scale // 4, input_size * scale // 4, 256)  # for VGG19 relu3_1
 
 print('input_size: %d' % input_size)
 print('ref_size: %d' % ref_size)
@@ -60,16 +63,17 @@ ref_files = sorted(glob(join(ref_path, '*.png')))
 n_files = len(input_files)
 assert n_files == len(ref_files)
 
-vgg19_model_path = 'SRNTT/models/VGG19/imagenet-vgg-verydeep-19.mat'
+# vgg19_model_path = 'SRNTT/models/VGG19/imagenet-vgg-verydeep-19.mat'
+vgg19_model_path = 'his_model/VGG19/imagenet-vgg-verydeep-19.mat'
 tf_input = tf.placeholder(dtype=tf.float32, shape=[1, input_size, input_size, 3])
 srntt = SRNTT(vgg19_model_path=vgg19_model_path)
 net_upscale, _ = srntt.model(tf_input / 127.5 - 1, is_train=False)
 net_vgg19 = VGG19(model_path=vgg19_model_path)
-swaper = Swap()
 
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
 with tf.Session(config=config) as sess:
+    swaper = Swap(sess=sess, patch_size=args.patch_size, stride=args.stride, input_size=input_f_size)
     tf.global_variables_initializer().run()
     print_format = '%%0%dd/%%0%dd' % (len(str(n_files)), len(str(n_files)))
     for i in range(n_files):

@@ -145,7 +145,7 @@ class Swap(object):
         if feature_map is None:
             feature_map = self.style
         h, w, c = feature_map.shape
-        t0 = time.time()
+        # t0 = time.time()
         # patches_tf = tf.image.extract_image_patches(
         #     images=feature_map[np.newaxis, ...],
         #     ksizes=[1, self.patch_size, self.patch_size, 1],
@@ -161,7 +161,7 @@ class Swap(object):
         patches_tf = self.patch_extr_ops[self.patch_size]
         # print('op building time: %.4f' % (time.time() - t0))
         patches = patches_tf.eval({self.tconv_input: feature_map[np.newaxis, ...]}, session=self.sess)
-        print('op building + eval time: %.4f' % (time.time() - t0))
+        # print('op building + eval time: %.4f' % (time.time() - t0))
         return patches
 
     def style2patches_slow(self, feature_map=None):
@@ -221,7 +221,7 @@ class Swap(object):
             assert all([all([len(s.shape) == 3 for s in styles]) for styles in other_styles])
 
         patch_size = self.patch_size
-        stride =self.stride
+        stride = self.stride
 
         # split content, style, and condition into patches
         t_e = time.time()
@@ -268,6 +268,7 @@ class Swap(object):
         print('patch match time: %0.2f s.' % (time.time() - t_m))
 
         '''my swap'''
+        t_s = time.time()
         del max_val
         # max_idx = max_idx[np.newaxis, ...]  # shape of (1,h,w)
         map_t = np.zeros_like(self.content)[np.newaxis, ...]
@@ -328,6 +329,7 @@ class Swap(object):
             maps.append(map_t_other[ii].squeeze())
 
         weights = None
+        print('Swaping time: %.4f' % (time.time() - t_s))
         '''end'''
 
         # compute matching similarity (inner product)
@@ -342,5 +344,7 @@ class Swap(object):
         # else:
         #     weights = None
         #     del patches_content_normed, patches_style_normed
+        self.patch_size = patch_size
+        self.stride = stride
 
         return maps, weights, max_idx
