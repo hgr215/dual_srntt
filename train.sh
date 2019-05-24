@@ -3,7 +3,8 @@ echo
 echo -- Start Training --
 echo
 
-training_set=${1-CUFED}
+#training_set=${1-CUFED}
+training_set=${1-dual}
 
 # # download training set
 #  python download_dataset.py --dataset_name ${training_set}
@@ -25,17 +26,29 @@ training_set=${1-CUFED}
 ##    --is_gan True
 
  # train a 2x new model
+#python main.py \
+#    --is_train True \
+#    --input_dir data/train/${training_set}/input \
+#    --ref_dir data/train/${training_set}/ref \
+#    --map_dir data/train/${training_set}/map_321_2x \
+#    --use_pretrained_model False \
+#    --num_init_epochs 2 \
+#    --num_epochs 35 \
+#    --save_dir demo_training_srntt \
+#    --x2_train
+##    --is_gan True
+
+# train p10 model
 python main.py \
     --is_train True \
     --input_dir data/train/${training_set}/input \
     --ref_dir data/train/${training_set}/ref \
-    --map_dir data/train/${training_set}/map_321_2x \
+    --map_dir data/train/${training_set}/map_321_2x_p10s5 \
     --use_pretrained_model False \
     --num_init_epochs 2 \
     --num_epochs 35 \
     --save_dir demo_training_srntt \
     --x2_train
-#    --is_gan True
 
 ## train based on a pre-trained model
 # load_step: step to load; num_epochs: epochs remaining

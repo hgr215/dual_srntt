@@ -339,7 +339,7 @@ class SRNTT(object):
 
         # check input dir
         files_input = sorted(glob(join(input_dir, '*.png')))
-        files_map = sorted(glob(join(map_dir, '*.npz')))
+        files_map = sorted(glob(join(map_dir, '*.npz')))  # --sort so that the map and input is matched.
         files_ref = sorted(glob(join(ref_dir, '*.png')))
         num_files = len(files_input)
 

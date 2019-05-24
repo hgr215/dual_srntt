@@ -1,7 +1,7 @@
 import os
 import argparse
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "4"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 
@@ -50,7 +50,7 @@ parser.add_argument('--vgg_perceptual_loss_layer', type=str, default='relu5_1',
 parser.add_argument('--is_WGAN_GP', type=str2bool, default=True, help='whether use WGAN-GP')
 parser.add_argument('--is_L1_loss', type=str2bool, default=True, help='whether use L1 norm')
 parser.add_argument('--param_WGAN_GP', type=float, default=10, help='parameter for WGAN-GP')
-parser.add_argument('--input_size', type=int, help='be careful! If use his CUFED to train 2x model, 80. If dual, 160')
+parser.add_argument('--input_size', type=int, default=80,help='be careful! size of input(not inputSU)')
 parser.add_argument('--use_weight_map', type=str2bool, default=False)
 parser.add_argument('--use_lower_layers_in_per_loss', type=str2bool, default=False)
 parser.add_argument('--is_gan', type=str2bool, default=True, help='whether to train with gan loss')
@@ -75,7 +75,7 @@ many_test = args.many_test
 x2_train = args.x2_train
 if x2_train:
     print('-- Train or test a x2 model!')
-    # args.input_size=80
+    args.input_size=80
     print('input_size: %s:' % args.input_size)
 
 if args.is_train:
@@ -86,7 +86,9 @@ if args.is_train:
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
     with open(os.path.join(args.save_dir, 'arguments.txt'), 'w') as f:
+        print(args)
         for arg in sorted(vars(args)):
+            print(arg)
             line = '{:>30}\t{:<10}\n'.format(arg, getattr(args, arg))
             bar = ''
             f.write(line)
