@@ -11,15 +11,15 @@ import argparse
 import time
 
 environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 parser = argparse.ArgumentParser('offline_patchMatch_textureSwap')
 parser.add_argument('--data_folder', type=str, default='data/train/CUFED',
                     help='The dir of dataset: CUFED or DIV2K or dual')
 parser.add_argument('--scale', type=int, default=2)
 parser.add_argument('--save_dir', type=str, default='', help='If not empty, save maps in it')
-parser.add_argument('--patch_size', default=3)
-parser.add_argument('--stride', default=1)
+parser.add_argument('--patch_size', type=int, default=3)
+parser.add_argument('--stride', type=int, default=1)
 args = parser.parse_args()
 
 patch_size = args.patch_size
@@ -42,6 +42,7 @@ elif 'dual' in data_folder:  # 320 in ./input (label) and 160 in ./ref (long)
 
 else:
     raise Exception('Unrecognized dataset!')
+input_f_size = (1, input_size * scale // 4, input_size * scale // 4, 256)  # for VGG19 relu3_1
 
 print('input_size: %d' % input_size)
 print('ref_size: %d' % ref_size)
@@ -72,18 +73,11 @@ tf_input = tf.placeholder(dtype=tf.float32, shape=[1, input_size, input_size, 3]
 srntt = SRNTT(vgg19_model_path=vgg19_model_path)
 net_upscale, _ = srntt.model(tf_input / 127.5 - 1, is_train=False)
 net_vgg19 = VGG19(model_path=vgg19_model_path)
-# swaper = Swap()
-if matching_layer == ['relu3_1', 'relu2_1', 'relu1_1']:
-    input_f_size = [1, input_size * scale // 4, input_size * scale // 4, 256]
-else:
-    print('not support', matching_layer)
-    exit(0)
 
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
 with tf.Session(config=config) as sess:
-    swaper = Swap(sess=sess, input_size=input_f_size, matching_layer=matching_layer, patch_size=patch_size,
-                  stride=stride)
+    swaper = Swap(sess=sess, patch_size=args.patch_size, stride=args.stride, input_size=input_f_size)
     tf.global_variables_initializer().run()
     print_format = '%%0%dd/%%0%dd' % (len(str(n_files)), len(str(n_files)))
     for i in range(n_files):

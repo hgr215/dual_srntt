@@ -1,6 +1,6 @@
 import tensorflow as tf
 import numpy as np
-import os
+import os, sys
 import time
 
 
@@ -145,7 +145,7 @@ class Swap(object):
         if feature_map is None:
             feature_map = self.style
         h, w, c = feature_map.shape
-        t0 = time.time()
+        # t0 = time.time()
         # patches_tf = tf.image.extract_image_patches(
         #     images=feature_map[np.newaxis, ...],
         #     ksizes=[1, self.patch_size, self.patch_size, 1],
@@ -161,7 +161,7 @@ class Swap(object):
         patches_tf = self.patch_extr_ops[self.patch_size]
         # print('op building time: %.4f' % (time.time() - t0))
         patches = patches_tf.eval({self.tconv_input: feature_map[np.newaxis, ...]}, session=self.sess)
-        print('op building + eval time: %.4f' % (time.time() - t0))
+        # print('op building + eval time: %.4f' % (time.time() - t0))
         return patches
 
     def style2patches_slow(self, feature_map=None):
@@ -180,7 +180,7 @@ class Swap(object):
         return np.stack(patches, axis=-1)
 
     def conditional_swap_multi_layer(self, content, style, condition, other_styles=None,
-                                     is_weight=False):
+                                     is_weight=False, verbose=True):
         """
         feature swapping with multiple references on multiple feature layers
         :param content: array (h, w, c), feature map of content
@@ -193,6 +193,9 @@ class Swap(object):
         :param is_weight, bool, whether compute weights
         :return: swapped feature maps - [3D array, ...], matching weights - 2D array, matching idx - 2D array
         """
+        if not verbose:
+            self.blockPrint()
+
         print('content.shape:', content.shape)
 
         assert isinstance(content, np.ndarray)
@@ -240,6 +243,7 @@ class Swap(object):
         # the size of a batch is 512MB
         t_m = time.time()
         batch_size = int(1024. ** 2 * 512 / (self.content.shape[0] * self.content.shape[1]))
+        # batch_size = int(1024. ** 2 * 512 / (self.content.shape[0] * self.content.shape[1]))//4
         num_out_channels = patches_style_normed.shape[-1]  # --num_p
         print('\tMatching ...')
         max_idx, max_val = None, None
@@ -313,6 +317,7 @@ class Swap(object):
                 for ii in range(len(map_t_other)):
                     print('swap time middle: %.4f' % (time.time() - t_s))
                     filter_b = patches_style_other[ii][:, :, :, idx * batch_size:(idx + 1) * batch_size]
+                    print('o_filter_b.shape:', filter_b.shape)
                     map_t_other[ii] += self.other_tconv[ii].eval(
                         {self.tconv_input: scores_b[np.newaxis, ...], self.t_conv_filter: filter_b}, session=self.sess)
                     print('swap time middle: %.4f' % (time.time() - t_s))
@@ -334,6 +339,7 @@ class Swap(object):
 
         print('patch swap time: %.4f' % (time.time() - t_s))
         weights = None
+        print('Swaping time: %.4f' % (time.time() - t_s))
         '''end'''
 
         # compute matching similarity (inner product)
@@ -348,9 +354,15 @@ class Swap(object):
         # else:
         #     weights = None
         #     del patches_content_normed, patches_style_normed
-
-        # restore para
         self.patch_size = patch_size
         self.stride = stride
 
+        if not verbose:
+            self.enablePrint()
         return maps, weights, max_idx
+
+    def blockPrint(self):
+        sys.stdout = open(os.devnull, 'w')
+
+    def enablePrint(self):
+        sys.stdout = sys.__stdout__
