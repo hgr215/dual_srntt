@@ -325,7 +325,7 @@ class SRNTT(object):
             use_lower_layers_in_per_loss=False,
             step=None
     ):
-        load_patch=False  # If true, load patches from map_321..., else, gene new one
+        load_patch = False  # If true, load patches from map_321..., else, gene new one
         scale = self.scale
         if np.sqrt(batch_size) != int(np.sqrt(batch_size)):
             logging.error('The batch size must be the power of an integer.')
@@ -942,6 +942,7 @@ class SRNTT(object):
         # ********************************************************************************
         # check input_dir
         scale = self.scale
+        print(scale)
         x2 = False
 
         img_input, img_hr = None, None
@@ -966,12 +967,15 @@ class SRNTT(object):
             h, w, _ = img_input.shape
         img_input_copy = np.copy(img_input)
 
-        if h * w * 16 > SRNTT.MAX_IMAGE_SIZE:  # avoid OOM
+        # if h * w * 16 > SRNTT.MAX_IMAGE_SIZE:  # avoid OOM
+        if True:
             # split img_input into patches
             patches = []
             grids = []
-            patch_size = 128
-            stride = 100
+            # patch_size = 128
+            patch_size = 256
+            # stride = 100
+            stride = 200
             for ind_row in range(0, h - (patch_size - stride), stride):
                 for ind_col in range(0, w - (patch_size - stride), stride):
                     patch = img_input[ind_row:ind_row + patch_size, ind_col:ind_col + patch_size, :]
@@ -980,9 +984,10 @@ class SRNTT(object):
                                        ((0, patch_size - patch.shape[0]), (0, patch_size - patch.shape[1]), (0, 0)),
                                        'reflect')
                     patches.append(patch)
-                    grids.append((ind_row * scale, ind_col * scale, patch_size * scale))  # $
+                    grids.append((ind_row * int(scale), ind_col * int(scale), patch_size * int(scale)))  # $
             grids = np.stack(grids, axis=0)
             img_input = np.stack(patches, axis=0)
+            print('img_input.shape', img_input.shape)
         else:
             grids = None
             img_input = np.expand_dims(img_input, axis=0)
@@ -1197,6 +1202,7 @@ class SRNTT(object):
 
             logging.info('\tGetting feature map of input LR image ...')
             img_input_upscale = imresize(patch, scale, interp='bicubic')  # --4 x input $
+            print('img_input_upscale.shape', img_input_upscale.shape)
             map_sr = self.net_vgg19.get_layer_output(
                 sess=self.sess, layer_name=matching_layer[0], feed_image=img_input_upscale)  # --only relu3_1?
 
@@ -1245,15 +1251,19 @@ class SRNTT(object):
         out_upscale_files = sorted(glob(join(result_dir, 'tmp', 'upscale_*.png')))
 
         if grids is not None:
+            f = 4 // int(scale)
+            print(type(f))
             patch_size = grids[0, 2]
             h_l, w_l = grids[-1, 0] + patch_size, grids[-1, 1] + patch_size
-            out_upscale_large = np.zeros((h_l, w_l, 3), dtype=np.float32)
-            out_srntt_large = np.copy(out_upscale_large)
+            out_upscale_large = np.zeros((int(h_l * f), int(w_l * f), 3), dtype=np.float32)
+            # out_srntt_large = np.copy(out_upscale_large)
+            out_srntt_large = np.zeros((h_l, w_l, 3), dtype=np.float32)
+            counter_scale = np.zeros_like(out_upscale_large, dtype=np.float32)
             counter = np.zeros_like(out_srntt_large, dtype=np.float32)
             for idx in xrange(len(grids)):
                 out_upscale_large[
-                grids[idx, 0]:grids[idx, 0] + patch_size,
-                grids[idx, 1]:grids[idx, 1] + patch_size, :] += imread(out_upscale_files[idx], mode='RGB').astype(
+                grids[idx, 0]:grids[idx, 0] + patch_size * f,
+                grids[idx, 1]:grids[idx, 1] + patch_size * f, :] += imread(out_upscale_files[idx], mode='RGB').astype(
                     np.float32)
 
                 out_srntt_large[
@@ -1265,10 +1275,14 @@ class SRNTT(object):
                 grids[idx, 0]:grids[idx, 0] + patch_size,
                 grids[idx, 1]:grids[idx, 1] + patch_size, :] += 1
 
-            out_upscale_large /= counter
+                counter_scale[
+                grids[idx, 0]:grids[idx, 0] + patch_size * f,
+                grids[idx, 1]:grids[idx, 1] + patch_size * f, :] += 1
+
+            out_upscale_large /= counter_scale
             out_srntt_large /= counter
-            out_upscale = out_upscale_large[:h * scale, :w * scale, :]
-            out_srntt = out_srntt_large[:h * scale, :w * scale, :]
+            out_upscale = out_upscale_large[:h * int(scale), :w * int(scale), :]
+            out_srntt = out_srntt_large[:h * int(scale), :w * int(scale), :]
         else:
             out_upscale = imread(out_upscale_files[0], mode='RGB')
             out_srntt = imread(out_srntt_files[0], mode='RGB')
