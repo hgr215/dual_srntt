@@ -54,7 +54,8 @@ class SRNTT(object):
             scale=2.0,
             is_fast=True,
             patch_size=3,
-            stride=1
+            stride=1,
+            hot_start=True
     ):
         self.srntt_model_path = srntt_model_path
         self.vgg19_model_path = vgg19_model_path
@@ -64,8 +65,10 @@ class SRNTT(object):
         self.is_gan = is_gan
         self.scale = scale
         self.is_fast = is_fast
-        self.patch_size=patch_size
-        self.stride=stride
+        self.patch_size = patch_size
+        self.stride = stride
+        self.hot_start = hot_start
+        self.matching_layer = ['relu3_1', 'relu2_1', 'relu1_1']
         download_vgg19(self.vgg19_model_path)
 
     def model(
@@ -174,7 +177,7 @@ class SRNTT(object):
                     weights, [weights.get_shape()[1] * 2, weights.get_shape()[2] * 2]) + self.b2)
             else:
                 map_ref = maps[1]
-            map_ref = InputLayer(inputs=map_ref, name='reference_feature_maps2')
+            map_ref = InputLayer(inputs=map_ref, name='reference_feature_maps2')  # --params is cleared
             net = ConcatLayer(layer=[map_in, map_ref], concat_dim=-1, name='concatenation2')
             net = Conv2d(net=net, n_filter=64, filter_size=(3, 3), strides=(1, 1), act=tf.nn.relu,
                          padding='SAME', W_init=w_init, name='medium/conv1')
@@ -343,8 +346,12 @@ class SRNTT(object):
         files_ref = sorted(glob(join(ref_dir, '*.png')))
         num_files = len(files_input)
 
-        assert num_files == len(files_ref) == len(files_map)
+        if not self.hot_start:
+            assert num_files == len(files_ref) == len(files_map)
+        else:
+            assert num_files == len(files_ref)
         print('num of files %d' % num_files)
+        print('len of files map:', len(files_map))
 
         # ********************************************************************************
         # *** build graph
@@ -352,7 +359,7 @@ class SRNTT(object):
         logging.info('Building graph ...')
         # input LR images, range [-1, 1]
         self.input = tf.placeholder(dtype=tf.float32, shape=[batch_size, input_size, input_size, 3])
-
+        # self.input = tf.placeholder(dtype=tf.float32, shape=[batch_size, None, None, 3])
         # original images, range [-1, 1]
         self.ground_truth = tf.placeholder(dtype=tf.float32,
                                            shape=[batch_size, input_size * scale, input_size * scale, 3])
@@ -365,7 +372,7 @@ class SRNTT(object):
         self.weights = tf.placeholder(dtype=tf.float32, shape=[batch_size, input_size, input_size])
 
         # reference images, ranges[-1, 1]
-        self.ref = tf.placeholder(dtype=tf.float32, shape=[batch_size, input_size, input_size, 3])
+        self.ref = tf.placeholder(dtype=tf.float32, shape=[batch_size, None, None, 3])  # --$
 
         # SRNTT network
         if use_weight_map:
@@ -377,6 +384,9 @@ class SRNTT(object):
         # VGG19 network, input range [0, 255]
         self.net_vgg_sr = VGG19((self.net_srntt.outputs + 1) * 127.5, model_path=self.vgg19_model_path)
         self.net_vgg_hr = VGG19((self.ground_truth + 1) * 127.5, model_path=self.vgg19_model_path)
+        if self.hot_start:
+            self.net_vgg_ref = VGG19(self.ref, model_path=self.vgg19_model_path)  # --input range 0~255
+        # --vgg_hr used for gt and SU, vgg_ref used for ref. in dual problem, ref is always same size as input
 
         # discriminator network
         self.net_d, d_real_logits = self.discriminator(self.ground_truth)
@@ -543,6 +553,10 @@ class SRNTT(object):
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
         with tf.Session(config=config) as sess:
+            input_f_size = [1, input_size * scale // 4, input_size * scale // 4, 256]  # --4 for vgg19 relu3_1
+            self.swaper = Swap(sess=sess, input_size=input_f_size,
+                               matching_layer=self.matching_layer, patch_size=self.patch_size, stride=self.stride
+                               )  # --original swap.py should be changed.
             logging.info('Loading models ...')
 
             # --tensorboard
@@ -582,6 +596,7 @@ class SRNTT(object):
                     exit(0)
                 model_path = join(self.save_dir, MODEL_FOLDER,
                                   '%d_' % (step,) + SRNTT_MODEL_NAMES['conditional_texture_transfer'])
+                print(model_path)
                 if files.load_and_assign_npz(
                         sess=sess,
                         name=model_path,
@@ -645,7 +660,32 @@ class SRNTT(object):
                     batch_truth = [img.astype(np.float32) / 127.5 - 1 for img in batch_imgs]
                     batch_input = [imresize(img, 1 / scale, interp='bicubic').astype(np.float32) / 127.5 - 1 for img in
                                    batch_imgs]
-                    batch_maps_tmp = [np.load(files_map[i])['target_map'] for i in sub_idx]  # Mt from file
+                    batch_SU = [imresize(img, scale, interp='bicubic') for img in batch_input]
+                    batch_ref = [imread(files_ref[i], mode='RGB').astype(np.float32) for i in sub_idx]
+                    batch_ref_lr = [imresize(img, 1 / scale, interp='bicubic') for img in batch_ref]
+                    batch_ref_sr = [imresize(img, scale, interp='bicubic') for img in batch_ref_lr]
+                    if not self.hot_start:
+                        batch_maps_tmp = [np.load(files_refs_map[i])['target_map'] for i in sub_idx]  # Mt from file
+                    # --$
+                    else:
+                        map_sr = self.net_vgg_hr.layers['relu3_1'].eval({self.ground_truth: batch_SU})
+                        styles = sess.run([self.net_vgg_ref.layers['relu3_1'],
+                                           self.net_vgg_ref.layers['relu2_1'],
+                                           self.net_vgg_ref.layers['relu1_1'],
+                                           ], feed_dict={self.ref: batch_ref})
+                        map_ref_sr = self.net_vgg_ref.layers['relu3_1'].eval({self.ref: batch_ref_sr})
+                        batch_maps_tmp = []
+                        for mi in range(batch_size):
+                            map_target, weight, _ = self.swaper.conditional_swap_multi_layer(
+                                content=map_sr[mi],
+                                style=[styles[0][mi]],  # --relu3_1
+                                condition=[map_ref_sr[mi]],
+                                other_styles=[[o_s_batch[mi]] for o_s_batch in styles[1:]],
+                                is_weight=use_weight_map,
+                                verbose=False
+                            )
+                            batch_maps_tmp.append(map_target)
+                    # --$
                     batch_maps = [[] for _ in range(len(batch_maps_tmp[0]))]
                     for s in batch_maps_tmp:
                         for i, item in enumerate(batch_maps):
@@ -729,12 +769,40 @@ class SRNTT(object):
                     batch_truth = [img.astype(np.float32) / 127.5 - 1 for img in batch_imgs]
                     batch_input = [imresize(img, 1 / scale, interp='bicubic').astype(np.float32) / 127.5 - 1 for img in
                                    batch_imgs]
-                    batch_maps_tmp = [np.load(files_map[i])['target_map'] for i in sub_idx]
+                    batch_SU = [imresize(img, scale, interp='bicubic') for img in batch_input]
+                    batch_ref = [imread(files_ref[i], mode='RGB').astype(np.float32) for i in sub_idx]
+                    batch_ref_lr = [imresize(img, 1 / scale, interp='bicubic') for img in batch_ref]
+                    batch_ref_sr = [imresize(img, scale, interp='bicubic') for img in batch_ref_lr]
+
+                    if not self.hot_start:
+                        batch_maps_tmp = [np.load(files_map[i])['target_map'] for i in sub_idx]  # Mt from file
+                    # --$
+                    else:
+                        map_sr = self.net_vgg_hr.layers['relu3_1'].eval({self.ground_truth: batch_SU})
+                        styles = sess.run([self.net_vgg_ref.layers['relu3_1'],
+                                           self.net_vgg_ref.layers['relu2_1'],
+                                           self.net_vgg_ref.layers['relu1_1'],
+                                           ], feed_dict={self.ref: batch_ref})
+                        map_ref_sr = self.net_vgg_ref.layers['relu3_1'].eval({self.ref: batch_ref_sr})
+                        batch_maps_tmp = []
+                        for mi in range(batch_size):
+                            map_target, weight, _ = self.swaper.conditional_swap_multi_layer(
+                                content=map_sr[mi],
+                                style=[styles[0][mi]],  # --relu3_1
+                                condition=[map_ref_sr[mi]],
+                                other_styles=[[o_s_batch[mi]] for o_s_batch in styles[1:]],
+                                is_weight=use_weight_map,
+                                verbose=False
+                            )
+                            batch_maps_tmp.append(map_target)
+                    # --$
+                    # batch_maps_tmp = [np.load(files_map[i])['target_map'] for i in sub_idx]
                     batch_maps = [[] for _ in range(len(batch_maps_tmp[0]))]
                     for s in batch_maps_tmp:
                         for i, item in enumerate(batch_maps):
                             item.append(s[i])
                     batch_maps = [np.array(b) for b in batch_maps]
+
                     if use_weight_map:
                         batch_weights = [np.pad(np.load(files_map[i])['weights'], ((1, 1), (1, 1)), 'edge')
                                          for i in sub_idx]
@@ -919,6 +987,7 @@ class SRNTT(object):
         # -- relu3_1 content feature size: when vgg19 is 'same' padding
         if self.is_fast:
             input_f_size = list(img_input.shape)
+            input_f_size[0] = 1  # $
             input_f_size[1] //= (4 // 2)
             input_f_size[2] //= (4 // 2)
             input_f_size[3] = 256
@@ -1019,7 +1088,7 @@ class SRNTT(object):
             # instant of Swap()
             logging.info('Initialize the swapper')
             self.swaper = Swap(sess=self.sess, input_size=input_f_size,
-                               matching_layer=matching_layer,patch_size=self.patch_size,stride=self.stride
+                               matching_layer=matching_layer, patch_size=self.patch_size, stride=self.stride
                                )  # --original swap.py should be changed.
             logging.info('Loading models ...')
             self.sess.run(tf.global_variables_initializer())
@@ -1456,7 +1525,7 @@ class SRNTT(object):
                      ' Start testing '
                      '**********')
 
-        matching_layer = ['relu3_1', 'relu2_1', 'relu1_1']
+        matching_layer = self.matching_layer
 
         logging.info('Get VGG19 Feature Maps')
 

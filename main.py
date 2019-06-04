@@ -1,7 +1,7 @@
 import os
 import argparse
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 
@@ -28,6 +28,7 @@ parser.add_argument('--save_dir', type=str, default=None,
 parser.add_argument('--num_res_blocks', type=int, default=16, help='number of residual blocks')
 
 # train parameters
+parser.add_argument('--hot_start', type=str2bool, default=True, help='train without map_321 files')
 parser.add_argument('--input_dir', type=str, default='data/test/input/ancient.jpg', help='dir of input images')
 parser.add_argument('--ref_dir', type=str, default='data/test/ref/ancient.jpg', help='dir of reference images')
 parser.add_argument('--map_dir', type=str, default='data/train/map_321', help='dir of texture maps of reference images')
@@ -50,7 +51,7 @@ parser.add_argument('--vgg_perceptual_loss_layer', type=str, default='relu5_1',
 parser.add_argument('--is_WGAN_GP', type=str2bool, default=True, help='whether use WGAN-GP')
 parser.add_argument('--is_L1_loss', type=str2bool, default=True, help='whether use L1 norm')
 parser.add_argument('--param_WGAN_GP', type=float, default=10, help='parameter for WGAN-GP')
-parser.add_argument('--input_size', type=int, default=80,help='be careful! size of input(not inputSU)')
+parser.add_argument('--input_size', type=int, default=80, help='be careful! size of input(not inputSU)')
 parser.add_argument('--use_weight_map', type=str2bool, default=False)
 parser.add_argument('--use_lower_layers_in_per_loss', type=str2bool, default=False)
 parser.add_argument('--is_gan', type=str2bool, default=True, help='whether to train with gan loss')
@@ -73,9 +74,10 @@ args = parser.parse_args()
 
 many_test = args.many_test
 x2_train = args.x2_train
+print('patch_size: %d, stride: %d' % (args.patch_size, args.stride))
 if x2_train:
     print('-- Train or test a x2 model!')
-    args.input_size=80
+    args.input_size = 80
     print('input_size: %s:' % args.input_size)
 
 if args.is_train:
@@ -105,7 +107,8 @@ if args.is_train:
             is_gan=args.is_gan,
             is_fast=args.fast_swap,
             patch_size=args.patch_size,
-            stride=args.stride
+            stride=args.stride,
+            hot_start=args.hot_start
         )
 
     else:
@@ -120,9 +123,10 @@ if args.is_train:
             is_fast=args.fast_swap,
             scale=2.0,
             patch_size=args.patch_size,
-            stride=args.stride
+            stride=args.stride,
+            hot_start=args.hot_start
         )
-
+    print('ARGS:\n',args)
     srntt.train(
         input_dir=args.input_dir,
         ref_dir=args.ref_dir,
@@ -145,22 +149,23 @@ if args.is_train:
         step=args.load_step
     )
 else:
-    if args.save_dir is not None:
-        # read recorded arguments
-        fixed_arguments = ['srntt_model_path', 'vgg19_model_path', 'save_dir', 'num_res_blocks', 'use_weight_map']
-        if os.path.exists(os.path.join(args.save_dir, 'arguments.txt')):
-            with open(os.path.join(args.save_dir, 'arguments.txt'), 'r') as f:
-                for arg, line in zip(sorted(vars(args)), f.readlines()):
-                    arg_name, arg_value = line.strip().split('\t')
-                    if arg_name in fixed_arguments:
-                        fixed_arguments.remove(arg_name)
-                        try:
-                            if isinstance(getattr(args, arg_name), bool):
-                                setattr(args, arg_name, str2bool(arg_value))
-                            else:
-                                setattr(args, arg_name, type(getattr(args, arg_name))(arg_value))
-                        except:
-                            print('Unmatched arg_name: %s!' % arg_name)
+    print('ARGS:\n', args)
+    # if args.save_dir is not None:
+    #     # read recorded arguments
+    #     fixed_arguments = ['srntt_model_path', 'vgg19_model_path', 'save_dir', 'num_res_blocks', 'use_weight_map']
+    #     if os.path.exists(os.path.join(args.save_dir, 'arguments.txt')):
+    #         with open(os.path.join(args.save_dir, 'arguments.txt'), 'r') as f:
+    #             for arg, line in zip(sorted(vars(args)), f.readlines()):
+    #                 arg_name, arg_value = line.strip().split('\t')
+    #                 if arg_name in fixed_arguments:
+    #                     fixed_arguments.remove(arg_name)
+    #                     try:
+    #                         if isinstance(getattr(args, arg_name), bool):
+    #                             setattr(args, arg_name, str2bool(arg_value))
+    #                         else:
+    #                             setattr(args, arg_name, type(getattr(args, arg_name))(arg_value))
+    #                     except:
+    #                         print('Unmatched arg_name: %s!' % arg_name)
     if not x2_train:
         from SRNTT.model import *
 
