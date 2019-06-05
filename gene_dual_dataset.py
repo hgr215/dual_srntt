@@ -4,6 +4,8 @@ import os
 import numpy as np
 from os.path import join
 
+os.environ['CUDA_VISIBLE_DEVICES']='2'
+
 # '''dual from DIV2K sti'''
 # data_dir = './data/train/dual'
 # # crop_size = 320  # crop size of label input

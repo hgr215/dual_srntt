@@ -8,6 +8,7 @@ from SRNTT.vgg19 import *
 from SRNTT.swap import *
 from scipy.misc import imread, imresize
 import argparse
+import time
 
 environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -21,6 +22,9 @@ parser.add_argument('--patch_size', type=int, default=3)
 parser.add_argument('--stride', type=int, default=1)
 args = parser.parse_args()
 
+patch_size = args.patch_size
+stride = args.stride
+print('Patch size: %d, stride: %d' % (patch_size, stride))
 data_folder = args.data_folder
 print('' == args.save_dir)
 scale = args.scale
@@ -34,7 +38,7 @@ elif 'DIV2K' in data_folder:
 elif 'dual' in data_folder:  # 320 in ./input (label) and 160 in ./ref (long)
     # input_size = 320 // scale
     input_size = 160 // scale
-    ref_size = input_size // scale
+    ref_size = input_size // scale  # --not the real ref size
 
 else:
     raise Exception('Unrecognized dataset!')
@@ -108,6 +112,8 @@ with tf.Session(config=config) as sess:
         )
 
         # save maps
+        t = time.time()
         np.savez(file_name, target_map=maps, weights=weights, correspondence=correspondence)
+        print('save time: %.4f' % (time.time() - t))
         # np.savez(file_name, target_map=maps, correspondence=correspondence)
         # np.savez(file_name, correspondence=correspondence)

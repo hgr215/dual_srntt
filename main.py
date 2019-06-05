@@ -1,7 +1,7 @@
 import os
 import argparse
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 
@@ -180,7 +180,7 @@ else:
         )
     else:
         from SRNTT.model_x2 import *
-
+        print(args.vgg19_model_path)
         srntt = SRNTT(
             srntt_model_path=args.srntt_model_path,
             vgg19_model_path=args.vgg19_model_path,

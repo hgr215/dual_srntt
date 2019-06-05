@@ -208,6 +208,8 @@ class Swap(object):
 
         assert isinstance(condition, list)
         self.condition = [np.squeeze(c) for c in condition]  # --condition is blurred style map
+        print('self.condition[0].shape',self.condition[0].shape)
+        print(len(self.condition),len(self.condition))
         assert all([len(self.condition[i].shape) == 3 for i in range(len(self.condition))])
         assert len(self.condition) == len(self.style)
 
@@ -242,7 +244,8 @@ class Swap(object):
         # match content and condition patches (batch-wise matching because of memory limitation)
         # the size of a batch is 512MB
         t_m = time.time()
-        batch_size = int(1024. ** 2 * 512 / (self.content.shape[0] * self.content.shape[1]))
+        # batch_size = int(1024. ** 2 * 512 / (self.content.shape[0] * self.content.shape[1]))
+        batch_size = int(1024. ** 2 * 512  / (self.content.shape[0] * self.content.shape[1]))
         # batch_size = int(1024. ** 2 * 512 / (self.content.shape[0] * self.content.shape[1]))//4
         num_out_channels = patches_style_normed.shape[-1]  # --num_p
         print('\tMatching ...')
@@ -290,34 +293,40 @@ class Swap(object):
                 patches_style_other.append(np.concatenate(list(map(self.style2patches, style)), axis=-1))
                 map_t_other.append(
                     np.zeros((1, self.content.shape[0] * ratio, self.content.shape[1] * ratio, style[0].shape[2])))
-
+        print('swap time middle: %.4f' % (time.time() - t_s))
         for idx in range(0, num_out_channels, batch_size):
-            filter_b = patches_style[:, :, :, idx * batch_size:(idx + 1) * batch_size]
-            print('batch_size: %d' % batch_size)
+            # filter_b = patches_style[:, :, :, idx * batch_size:(idx + 1) * batch_size]
+            filter_b = patches_style[:, :, :, idx: idx + batch_size]
+
+            print('filter_b.shape', filter_b.shape)
             num_patches_b = filter_b.shape[-1]  # --real batch_size
             scores_b = np.zeros((h_co, w_co, num_patches_b + 1))  # last channel is for indexing convenience
             max_idx_b = max_idx.copy()
             coor_out = (max_idx < idx) + (max_idx >= (idx + batch_size))  # (x,y) whose patch_idx not in batch
-            max_idx_b[~coor_out] -= idx * batch_size
+            max_idx_b[~coor_out] -= idx
             max_idx_b[coor_out] = -1
             max_idx_b = max_idx_b.reshape((-1,))
             scores_b = scores_b.reshape((-1, num_patches_b + 1))
+            print(scores_b.shape, max_idx_b.shape)
             scores_b[range(h_co * w_co), max_idx_b[range(h_co * w_co)]] = 1
             scores_b = scores_b.reshape((h_co, w_co, num_patches_b + 1))
             scores_b = scores_b[:, :, :-1]  # remove last channel
-
+            print('swap time middle: %.4f' % (time.time() - t_s))
             # print('patch_style.shape: ' , patches_style.shape)
             # condition layer swap
             print('filter_b.shape: ', filter_b.shape, scores_b[np.newaxis, ...].shape)
             map_t += self.t_conv.eval({self.tconv_input: scores_b[np.newaxis, ...], self.t_conv_filter: filter_b},
                                       session=self.sess)
+            print('swap time middle: %.4f' % (time.time() - t_s))
             # other layer swap:
             if other_styles:
                 for ii in range(len(map_t_other)):
-                    filter_b = patches_style_other[ii][:, :, :, idx * batch_size:(idx + 1) * batch_size]
+                    print('swap time middle: %.4f' % (time.time() - t_s))
+                    filter_b = patches_style_other[ii][:, :, :, idx: idx + batch_size]
                     print('o_filter_b.shape:', filter_b.shape)
                     map_t_other[ii] += self.other_tconv[ii].eval(
                         {self.tconv_input: scores_b[np.newaxis, ...], self.t_conv_filter: filter_b}, session=self.sess)
+                    print('swap time middle: %.4f' % (time.time() - t_s))
 
         # cal overlap (flatten t_conv, like in pytorch swap project)
         # over_input = np.ones((1, h_co, w_co, 1))
@@ -332,7 +341,9 @@ class Swap(object):
             #                                      session=self.sess)
             map_t_other[ii] /= self.over_map_other[ii]
             maps.append(map_t_other[ii].squeeze())
+        print('swap time middle: %.4f' % (time.time() - t_s))
 
+        print('patch swap time: %.4f' % (time.time() - t_s))
         weights = None
         print('Swaping time: %.4f' % (time.time() - t_s))
         '''end'''
