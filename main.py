@@ -1,7 +1,6 @@
 import os
 import argparse
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 
@@ -16,6 +15,7 @@ def str2bool(v):
 
 parser = argparse.ArgumentParser(description='SRNTT')
 
+parser.add_argument('--cuda', '-c', type=str, default='0', help='cuda')
 # init parameters
 parser.add_argument('--fast_swap', type=str2bool, default=True, help="whether use fast swap scheme.")
 parser.add_argument('--is_train', type=str2bool, default=False)
@@ -72,6 +72,8 @@ parser.add_argument('--is_original_image', type=str2bool, default=True)
 
 args = parser.parse_args()
 
+os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda
+
 many_test = args.many_test
 x2_train = args.x2_train
 print('patch_size: %d, stride: %d' % (args.patch_size, args.stride))
@@ -126,7 +128,7 @@ if args.is_train:
             stride=args.stride,
             hot_start=args.hot_start
         )
-    print('ARGS:\n',args)
+    print('ARGS:\n', args)
     srntt.train(
         input_dir=args.input_dir,
         ref_dir=args.ref_dir,
@@ -180,6 +182,7 @@ else:
         )
     else:
         from SRNTT.model_x2 import *
+
         print(args.vgg19_model_path)
         srntt = SRNTT(
             srntt_model_path=args.srntt_model_path,

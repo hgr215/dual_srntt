@@ -967,8 +967,8 @@ class SRNTT(object):
             h, w, _ = img_input.shape
         img_input_copy = np.copy(img_input)
 
-        # if h * w * 16 > SRNTT.MAX_IMAGE_SIZE:  # avoid OOM
-        if True:
+        if h * w * 16 > SRNTT.MAX_IMAGE_SIZE:  # avoid OOM
+        # if True:
             # split img_input into patches
             patches = []
             grids = []

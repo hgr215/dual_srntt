@@ -56,19 +56,20 @@ echo
 #    --load_step 26 \
 #    --is_original_image True
 
-## test x2 model p10s2
-#python main.py \
-#    --input_dir data/test/input \
-#    --ref_dir data/test/ref \
-#    --x2_train \
-#    --is_train False \
-#    --use_init_model_only False \
-#    --result_dir results\
-#    --save_dir demo_training_srntt_p10s2\
-#    --load_step 35 \
-#    --is_original_image True \
-#    --patch_size 10 \
-#    --stride 2
+# test x2 model p10s2
+python main.py \
+    --input_dir data/test/input_sti \
+    --ref_dir data/test/ref_sti \
+    --x2_train \
+    --is_train False \
+    --use_init_model_only False \
+    --result_dir results/p10s2_sti \
+    --save_dir demo_training_srntt_p10s2\
+    --load_step 35 \
+    --is_original_image True \
+    --patch_size 10 \
+    --stride 2 \
+    --cuda 3
 
 ## test hw transfer
 #python main.py \
@@ -82,14 +83,27 @@ echo
 #    --load_step 52 \
 #    --is_original_image True
 
-# test hw liqi
-python main.py \
-    --input_dir data/test/input_liqi \
-    --ref_dir data/test/ref_liqi \
-    --x2_train \
-    --is_train False \
-    --use_init_model_only False \
-    --result_dir results/2x_liqi \
-    --save_dir model_x2 \
-    --load_step 26 \
-    --is_original_image True
+## test hw liqi
+#python main.py \
+#    --input_dir data/test/input_liqi \
+#    --ref_dir data/test/ref_liqi \
+#    --x2_train \
+#    --is_train False \
+#    --use_init_model_only False \
+#    --result_dir results/2x_liqi \
+#    --save_dir model_x2 \
+#    --load_step 26 \
+#    --is_original_image True
+
+## test init hw
+#python main.py \
+#    --input_dir data/test/input_sti \
+#    --ref_dir data/test/ref_sti \
+#    --x2_train \
+#    --is_train False \
+#    --use_init_model_only False \
+#    --result_dir results/hw_init_stidata \
+#    --save_dir model_hw_init \
+#    --load_step 28 \
+#    --is_original_image True \
+#    --cuda 3
