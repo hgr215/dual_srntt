@@ -66,17 +66,17 @@ training_set=${1-dual_hw}
 #    --patch_size 10 \
 #    --stride 2
 
-python main.py \
-    --is_train True \
-    --input_dir data/train/${training_set}/input \
-    --ref_dir data/train/${training_set}/ref \
-    --map_dir data/train/${training_set}/map_321_2x \
-    --use_pretrained_model False \
-    --num_init_epochs 2 \
-    --num_epochs 35 \
-    --save_dir demo_training_srntt \
-    --x2_train
-#    --is_gan True
+#python main.py \
+#    --is_train True \
+#    --input_dir data/train/${training_set}/input \
+#    --ref_dir data/train/${training_set}/ref \
+#    --map_dir data/train/${training_set}/map_321_2x \
+#    --use_pretrained_model False \
+#    --num_init_epochs 2 \
+#    --num_epochs 35 \
+#    --save_dir demo_training_srntt \
+#    --x2_train
+##    --is_gan True
 
 
 ## train based on a pre-trained model
@@ -118,6 +118,9 @@ python main.py \
     --use_pretrained_model False \
     --num_init_epochs 2 \
     --num_epochs 35 \
-    --save_dir model_hw_init \
-    --x2_train
+    --save_dir model_hw_init_p10s2 \
+    --x2_train \
+    --patch_size 10 \
+    --stride 2 \
+    --cuda 1
 

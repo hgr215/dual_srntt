@@ -325,8 +325,11 @@ class SRNTT(object):
             use_lower_layers_in_per_loss=False,
             step=None
     ):
-        load_patch = False  # If true, load patches from map_321..., else, gene new one
+
         scale = self.scale
+        input_f_size = [1, input_size * scale // 4, input_size * scale // 4, 256]  # --4 for vgg19 relu3_1
+        load_patch = False  # If true, load patches from map_321..., else, gene new one
+
         if np.sqrt(batch_size) != int(np.sqrt(batch_size)):
             logging.error('The batch size must be the power of an integer.')
             exit(0)
@@ -368,8 +371,13 @@ class SRNTT(object):
                                            shape=[batch_size, input_size * scale, input_size * scale, 3])
 
         # texture feature maps, range [0, ?]
-        self.maps = tuple([tf.placeholder(dtype=tf.float32, shape=[batch_size, m.shape[0], m.shape[1], m.shape[2]])
-                           for m in np.load(files_map[0])['target_map']])
+        # self.maps = tuple([tf.placeholder(dtype=tf.float32, shape=[batch_size, m.shape[0], m.shape[1], m.shape[2]])
+        #                    for m in np.load(files_map[0])['target_map']])
+        self.maps = tuple(
+            [tf.placeholder(dtype=tf.float32,
+                            shape=[batch_size, int(input_f_size[1]) * 2 ** i, int(input_f_size[2]) * 2 ** i,
+                                   256 // 2 ** i]) for i in range(3)]
+        )
 
         # weight maps
         self.weights = tf.placeholder(dtype=tf.float32, shape=[batch_size, input_size, input_size])
@@ -527,28 +535,29 @@ class SRNTT(object):
         # ********************************************************************************
         # *** samples for monitoring the training process
         # ********************************************************************************
-        np.random.seed(2019)
+        # np.random.seed(2019)
         idx = np.random.choice(np.arange(num_files), batch_size, replace=False)
         samples_in = [imread(files_input[i], mode='RGB') for i in idx]
         samples_ref = [imresize(imread(files_ref[i], mode='RGB'), (input_size * 4, input_size * 4), interp='bicubic')
                        for i in idx]
         samples_input = [imresize(img, (input_size, input_size), interp='bicubic').astype(np.float32) / 127.5 - 1
                          for img in samples_in]
-        samples_texture_map_tmp = [np.load(files_map[i])['target_map'] for i in idx]
-        samples_texture_map = [[] for _ in range(len(samples_texture_map_tmp[0]))]
-        for s in samples_texture_map_tmp:
-            for i, item in enumerate(samples_texture_map):
-                item.append(s[i])
-        samples_texture_map = [np.array(b) for b in samples_texture_map]
-        if use_weight_map:
-            samples_weight_map = [np.pad(np.load(files_map[i])['weights'], ((1, 1), (1, 1)), 'edge') for i in idx]
-        else:
-            samples_weight_map = np.zeros(shape=(batch_size, input_size, input_size))
+        # samples_texture_map_tmp = [np.load(files_map[i])['target_map'] for i in idx]
+        # samples_texture_map = [[] for _ in range(len(samples_texture_map_tmp[0]))]
+        # for s in samples_texture_map_tmp:
+        #     for i, item in enumerate(samples_texture_map):
+        #         item.append(s[i])
+        # samples_texture_map = [np.array(b) for b in samples_texture_map]
+        # if use_weight_map:
+        #     samples_weight_map = [np.pad(np.load(files_map[i])['weights'], ((1, 1), (1, 1)), 'edge') for i in idx]
+        # else:
+        #     samples_weight_map = np.zeros(shape=(batch_size, input_size, input_size))
         frame_size = int(np.sqrt(batch_size))
         vis.save_images(np.array(samples_in), [frame_size, frame_size], join(self.save_dir, SAMPLE_FOLDER, 'HR.png'))
         vis.save_images(np.round((np.array(samples_input) + 1) * 127.5).astype(np.uint8), [frame_size, frame_size],
                         join(self.save_dir, SAMPLE_FOLDER, 'LR.png'))
         vis.save_images(np.array(samples_ref), [frame_size, frame_size], join(self.save_dir, SAMPLE_FOLDER, 'Ref.png'))
+        samples_weight_map = np.zeros(shape=(batch_size, input_size, input_size))
 
         # ********************************************************************************
         # *** load models and training
@@ -556,7 +565,6 @@ class SRNTT(object):
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
         with tf.Session(config=config) as sess:
-            input_f_size = [1, input_size * scale // 4, input_size * scale // 4, 256]  # --4 for vgg19 relu3_1
             self.swaper = Swap(sess=sess, input_size=input_f_size,
                                matching_layer=self.matching_layer, patch_size=self.patch_size, stride=self.stride
                                )  # --original swap.py should be changed.
@@ -748,12 +756,12 @@ class SRNTT(object):
                                   weights[4] * l_reconst, weights[3] * l_bp))
 
                 # save intermediate results
-                vis.save_images(
-                    np.round((self.net_srntt.outputs.eval({
-                        self.input: samples_input, self.maps: samples_texture_map,
-                        self.weights: samples_weight_map}) + 1) * 127.5).astype(np.uint8),
-                    [frame_size, frame_size],
-                    join(self.save_dir, SAMPLE_FOLDER, 'init_E%03d.png' % (epoch + 1 + step)))
+                # vis.save_images(
+                #     np.round((self.net_srntt.outputs.eval({
+                #         self.input: samples_input, self.maps: samples_texture_map,
+                #         self.weights: samples_weight_map}) + 1) * 127.5).astype(np.uint8),
+                #     [frame_size, frame_size],
+                #     join(self.save_dir, SAMPLE_FOLDER, 'init_E%03d.png' % (epoch + 1 + step)))
 
                 # save model for each epoch
                 files.save_npz(
@@ -887,12 +895,12 @@ class SRNTT(object):
                                   weights[2] * l_adv, l_dis))
 
                 # save intermediate results  --per epoch
-                vis.save_images(
-                    np.round((self.net_srntt.outputs.eval({
-                        self.input: samples_input, self.maps: samples_texture_map,
-                        self.weights: samples_weight_map}) + 1) * 127.5).astype(np.uint8),
-                    [frame_size, frame_size],
-                    join(self.save_dir, SAMPLE_FOLDER, 'E%03d.png' % (epoch + 1 + step)))
+                # vis.save_images(
+                #     np.round((self.net_srntt.outputs.eval({
+                #         self.input: samples_input, self.maps: samples_texture_map,
+                #         self.weights: samples_weight_map}) + 1) * 127.5).astype(np.uint8),
+                #     [frame_size, frame_size],
+                #     join(self.save_dir, SAMPLE_FOLDER, 'E%03d.png' % (epoch + 1 + step)))
 
                 # save models for each epoch
                 files.save_npz(
@@ -968,7 +976,7 @@ class SRNTT(object):
         img_input_copy = np.copy(img_input)
 
         if h * w * 16 > SRNTT.MAX_IMAGE_SIZE:  # avoid OOM
-        # if True:
+            # if True:
             # split img_input into patches
             patches = []
             grids = []
