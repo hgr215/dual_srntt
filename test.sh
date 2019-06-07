@@ -102,8 +102,8 @@ python main.py \
     --x2_train \
     --is_train False \
     --use_init_model_only False \
-    --result_dir results/hw_init_trainim \
+    --result_dir results/hw_init_trainim2 \
     --save_dir model_hw_init \
     --load_step 28 \
     --is_original_image True \
-    --cuda 3
+    --cuda 0
