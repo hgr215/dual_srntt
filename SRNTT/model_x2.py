@@ -46,6 +46,7 @@ class SRNTT(object):
 
     def __init__(
             self,
+            args,
             # srntt_model_path='models/SRNTT',
             srntt_model_path='../his_model/SRNTT',
             # vgg19_model_path='models/VGG19/imagenet-vgg-verydeep-19.mat',
@@ -57,8 +58,9 @@ class SRNTT(object):
             is_fast=True,
             patch_size=3,
             stride=1,
-            hot_start=True
+            hot_start=True,
     ):
+        self.args = args
         self.srntt_model_path = srntt_model_path
         self.vgg19_model_path = vgg19_model_path
         self.save_dir = save_dir
@@ -312,7 +314,7 @@ class SRNTT(object):
             num_epochs=100,
             learning_rate=1e-4,
             beta1=0.9,
-            use_pretrained_model=True,
+            # use_pretrained_model=True,
             use_init_model_only=False,  # the init model is trained only with the reconstruction loss
             weights=(1e-4, 1e-4, 1e-6, 1., 1.),
             # (perceptual loss, texture loss, adversarial loss, back projection loss, reconstruction_loss)
@@ -337,9 +339,9 @@ class SRNTT(object):
         # detect existing model if not use_pretrained_model
         if self.save_dir is None:
             self.save_dir = 'default_save_dir'
-        if not use_pretrained_model and exists(join(self.save_dir, MODEL_FOLDER)):
-            logging.warning('The existing model dir %s is removed!' % join(self.save_dir, MODEL_FOLDER))
-            rmtree(join(self.save_dir, MODEL_FOLDER))
+        # if not use_pretrained_model and exists(join(self.save_dir, MODEL_FOLDER)):
+        #     logging.warning('The existing model dir %s is removed!' % join(self.save_dir, MODEL_FOLDER))
+        #     rmtree(join(self.save_dir, MODEL_FOLDER))
 
         # create save folders
         for folder in [MODEL_FOLDER, SAMPLE_FOLDER]:
@@ -512,6 +514,7 @@ class SRNTT(object):
         trainable_vars = tf.trainable_variables()
         var_g = [v for v in trainable_vars if 'texture_transfer' in v.name]
         var_d = [v for v in trainable_vars if 'discriminator' in v.name]
+        var_e = [v for v in trainable_vars if 'content_extractor' in v.name]
 
         # learning rate decay
         global_step = tf.Variable(0, trainable=False, name='global_step')
@@ -526,9 +529,9 @@ class SRNTT(object):
 
         # optimizer
         optimizer_init = tf.train.AdamOptimizer(
-            learning_rate=learning_rate, beta1=beta1).minimize(loss_init, var_list=var_g)
+            learning_rate=learning_rate, beta1=beta1).minimize(loss_init, var_list=var_g+var_e)
         optimizer = tf.train.AdamOptimizer(
-            learning_rate=decayed_learning_rate, beta1=beta1).minimize(loss, var_list=var_g, global_step=global_step)
+            learning_rate=decayed_learning_rate, beta1=beta1).minimize(loss, var_list=var_g+var_e, global_step=global_step)
         optimizer_d = tf.train.AdamOptimizer(
             learning_rate=decayed_learning_rate, beta1=beta1).minimize(loss_d, var_list=var_d, global_step=global_step)
 
@@ -576,85 +579,144 @@ class SRNTT(object):
 
             tf.global_variables_initializer().run()
 
-            # load pre-trained upscaling.
-            model_path = join(self.srntt_model_path, SRNTT_MODEL_NAMES['content_extractor'])
-            if files.load_and_assign_npz(
-                    sess=sess,
-                    name=model_path,
-                    network=self.net_upscale) is False:
-                logging.error('FAILED load %s' % model_path)
-                exit(0)
-            vis.save_images(
-                np.round((self.net_upscale.outputs.eval({self.input: samples_input}) + 1) * 127.5).astype(np.uint8),
-                [frame_size, frame_size], join(self.save_dir, SAMPLE_FOLDER, 'Upscale.png'))
+            # # load pre-trained upscaling.
+            # if self.args.init_CE_with_pretrain:
+            #     model_path = join(self.srntt_model_path, SRNTT_MODEL_NAMES['content_extractor'])
+            #     if files.load_and_assign_npz(
+            #             sess=sess,
+            #             name=model_path,
+            #             network=self.net_upscale) is False:
+            #         logging.error('FAILED load %s' % model_path)
+            #         exit(0)
+            # else:
+            #     print('Use random inited CE params!')
+                    
+            # vis.save_images(
+            #     np.round((self.net_upscale.outputs.eval({self.input: samples_input}) + 1) * 127.5).astype(np.uint8),
+            #     [frame_size, frame_size], join(self.save_dir, SAMPLE_FOLDER, 'Upscale.png'))
 
             # load the specific texture transfer model, specified by save_dir
-            is_load_success = False
-            if use_init_model_only:
-                model_path = join(self.save_dir, MODEL_FOLDER, SRNTT_MODEL_NAMES['init'])
-                if files.load_and_assign_npz(
-                        sess=sess,
-                        name=model_path,
-                        network=self.net_srntt):
-                    num_init_epochs = 0
+            # load CE:
+            if self.args.load_pre_CE:
+                model_path = join(self.save_dir, MODEL_FOLDER, '%d_' % (step,) +SRNTT_MODEL_NAMES['content_extractor'])
+                if files.load_and_assign_npz(sess=sess,name=model_path,network=self.net_upscale):
+                    # num_init_epochs = 0
                     is_load_success = True
                     logging.info('SUCCESS load %s' % model_path)
                 else:
-                    logging.warning('FAILED load %s' % model_path)
-            elif use_pretrained_model:
-                if step is None:
-                    print('--load_step must provided when using pretrained model in save_dir')
-                    exit(0)
-                model_path = join(self.save_dir, MODEL_FOLDER,
-                                  '%d_' % (step,) + SRNTT_MODEL_NAMES['conditional_texture_transfer'])
-                print(model_path)
-                if files.load_and_assign_npz(
-                        sess=sess,
-                        name=model_path,
-                        network=self.net_srntt):
-                    num_init_epochs = 0
+                    print('Loading your model CE failed, loading his model:')
+                    model_path = join(self.srntt_model_path, MODEL_FOLDER, SRNTT_MODEL_NAMES['content_extractor'])
+                    if files.load_and_assign_npz(sess=sess,name=model_path,network=self.net_upscale):
+                        # num_init_epochs = 0
+                        is_load_success = True
+                        logging.info('SUCCESS load %s' % model_path)
+                    else:
+                        print('Failed to load CE!')
+                        exit(0)
+            else:
+                print('Init CE params with random')
+            
+            if self.args.load_pre_srntt:
+                model_path = join(self.save_dir, MODEL_FOLDER, '%d_' % (step,) +SRNTT_MODEL_NAMES['conditional_texture_transfer'])
+                if files.load_and_assign_npz(sess=sess,name=model_path,network=self.net_srntt):
+                    num_init_epochs -=(step+1)
+                    if num_init_epochs<0: num_init_epochs=0
                     is_load_success = True
                     logging.info('SUCCESS load %s' % model_path)
-                else:
-                    logging.warning('FAILED load %s' % model_path)
 
-                model_path = join(self.save_dir, MODEL_FOLDER, '%d_' % (step,) + SRNTT_MODEL_NAMES['discriminator'])
-                if files.load_and_assign_npz(
+                    model_path = join(self.save_dir, MODEL_FOLDER, '%d_' % (step,) + SRNTT_MODEL_NAMES['discriminator'])
+                    if files.load_and_assign_npz(
                         sess=sess,
                         name=model_path,
                         network=self.net_d):
-                    logging.info('SUCCESS load %s' % model_path)
+                        logging.info('SUCCESS load %s' % model_path)
+                    else:
+                        logging.warning('FAILED load %s' % model_path)
                 else:
-                    logging.warning('FAILED load %s' % model_path)
-            if not use_pretrained_model and not use_init_model_only:
-                step = 0
-                print('\n-- Start training with inited params, no loading:\n')
+                    print('Loading your model snrtt failed, loading his model:')
+                    if use_init_model_only:
+                        model_path = join(self.srntt_model_path, MODEL_FOLDER, SRNTT_MODEL_NAMES['init'])
+                    else:
+                        model_path = join(self.srntt_model_path, MODEL_FOLDER, SRNTT_MODEL_NAMES['conditional_texture_transfer'])
+                    if files.load_and_assign_npz(sess=sess,name=model_path,network=self.net_srntt):
+                        # num_init_epochs = 0
+                        is_load_success = True
+                        logging.info('SUCCESS load %s' % model_path)
+                    else:
+                        print('Failed to load srntt!')
+                        exit(0)
+            else:
+                print('Init srntt params with random')
+                if not self.args.load_pre_CE:step=-1
 
-            # load pre-trained conditional texture transfer
-            if not is_load_success:
-                use_weight_map = False
-                if use_init_model_only:
-                    model_path = join(self.srntt_model_path, SRNTT_MODEL_NAMES['init'])
-                    if files.load_and_assign_npz(
-                            sess=sess,
-                            name=model_path,
-                            network=self.net_srntt):
-                        num_init_epochs = 0
-                        logging.info('SUCCESS load %s' % model_path)
-                    else:
-                        logging.error('FAILED load %s' % model_path)
-                        exit(0)
-                elif use_pretrained_model:
-                    model_path = join(self.srntt_model_path, SRNTT_MODEL_NAMES['conditional_texture_transfer'])
-                    if files.load_and_assign_npz(
-                            sess=sess,
-                            name=model_path,
-                            network=self.net_srntt):
-                        num_init_epochs = 0
-                        logging.info('SUCCESS load %s' % model_path)
-                    else:
-                        logging.error('FAILED load %s' % model_path)
-                        exit(0)
+                    
+
+            # is_load_success = False
+            # if use_init_model_only:
+            #     model_path = join(self.save_dir, MODEL_FOLDER, SRNTT_MODEL_NAMES['init'])
+            #     if files.load_and_assign_npz(
+            #             sess=sess,
+            #             name=model_path,
+            #             network=self.net_srntt):
+            #         num_init_epochs = 0
+            #         is_load_success = True
+            #         logging.info('SUCCESS load %s' % model_path)
+            #     else:
+            #         logging.warning('FAILED load %s' % model_path)
+            # elif use_pretrained_model:
+            #     if step is None:
+            #         print('--load_step must provided when using pretrained model in save_dir')
+            #         exit(0)
+            #     model_path = join(self.save_dir, MODEL_FOLDER,
+            #                       '%d_' % (step,) + SRNTT_MODEL_NAMES['conditional_texture_transfer'])
+            #     print(model_path)
+            #     if files.load_and_assign_npz(
+            #             sess=sess,
+            #             name=model_path,
+            #             network=self.net_srntt):
+            #         num_init_epochs = 0
+            #         is_load_success = True
+            #         logging.info('SUCCESS load %s' % model_path)
+            #     else:
+            #         logging.warning('FAILED load %s' % model_path)
+
+            #     model_path = join(self.save_dir, MODEL_FOLDER, '%d_' % (step,) + SRNTT_MODEL_NAMES['discriminator'])
+            #     if files.load_and_assign_npz(
+            #             sess=sess,
+            #             name=model_path,
+            #             network=self.net_d):
+            #         logging.info('SUCCESS load %s' % model_path)
+            #     else:
+            #         logging.warning('FAILED load %s' % model_path)
+            # if not use_pretrained_model and not use_init_model_only:
+            #     step = 0
+            #     print('\n-- Start training with inited params, no loading:\n')
+
+            # # load pre-trained conditional texture transfer
+            # if not is_load_success:
+            #     use_weight_map = False
+            #     if use_init_model_only:
+            #         model_path = join(self.srntt_model_path, SRNTT_MODEL_NAMES['init'])
+            #         if files.load_and_assign_npz(
+            #                 sess=sess,
+            #                 name=model_path,
+            #                 network=self.net_srntt):
+            #             num_init_epochs = 0
+            #             logging.info('SUCCESS load %s' % model_path)
+            #         else:
+            #             logging.error('FAILED load %s' % model_path)
+            #             exit(0)
+            #     elif use_pretrained_model:
+            #         model_path = join(self.srntt_model_path, SRNTT_MODEL_NAMES['conditional_texture_transfer'])
+            #         if files.load_and_assign_npz(
+            #                 sess=sess,
+            #                 name=model_path,
+            #                 network=self.net_srntt):
+            #             num_init_epochs = 0
+            #             logging.info('SUCCESS load %s' % model_path)
+            #         else:
+            #             logging.error('FAILED load %s' % model_path)
+            #             exit(0)
 
             logging.info('**********'
                          ' Start training '
@@ -663,6 +725,7 @@ class SRNTT(object):
             current_eta = None
             idx = np.arange(num_files)
             for epoch in xrange(num_init_epochs):
+                step+=1
                 np.random.shuffle(idx)  # --for each epoch, order is not same
                 for n_batch in xrange(num_batches):
                     step_time = time.time()
@@ -676,7 +739,8 @@ class SRNTT(object):
                     batch_ref_lr = [imresize(img, 1 / scale, interp='bicubic') for img in batch_ref]
                     batch_ref_sr = [imresize(img, scale, interp='bicubic') for img in batch_ref_lr]
                     if not self.hot_start:
-                        batch_maps_tmp = [np.load(files_refs_map[i])['target_map'] for i in sub_idx]  # Mt from file
+                        pass
+                        # batch_maps_tmp = [np.load(files_refs_map[i])['target_map'] for i in sub_idx]  # Mt from file
                     # --$
                     else:
                         map_sr = self.net_vgg_hr.layers['relu3_1'].eval({self.ground_truth: batch_SU})
@@ -766,12 +830,18 @@ class SRNTT(object):
                 # save model for each epoch
                 files.save_npz(
                     save_list=self.net_srntt.all_params,
-                    name=join(self.save_dir, MODEL_FOLDER, SRNTT_MODEL_NAMES['init']),
+                    name=join(self.save_dir, MODEL_FOLDER, str(step) + '_' + SRNTT_MODEL_NAMES['conditional_texture_transfer']),
+                    sess=sess)
+
+                files.save_npz(
+                    save_list=self.net_upscale.all_params,
+                    name=join(self.save_dir, MODEL_FOLDER, str(step) + '_' + SRNTT_MODEL_NAMES['content_extractor']),
                     sess=sess)
 
             # train with all losses
             current_eta = None
-            for epoch in xrange(num_epochs):
+            for epoch in xrange(num_epochs-num_init_epochs):
+                step+=1
                 np.random.shuffle(idx)
                 for n_batch in xrange(num_batches):
                     step_time = time.time()
@@ -889,7 +959,7 @@ class SRNTT(object):
                                  '\tl_rec = %.4f\tl_bp  = %.4f\n'
                                  '\tl_per = %.4f\tl_tex = %.4f\n'
                                  '\tl_adv = %.4f\tl_dis = %.4f' %
-                                 (epoch + 1 + step, num_epochs + step, n_batch + 1, num_batches, eta_str,
+                                 (step+1, num_epochs, n_batch + 1, num_batches, eta_str,
                                   weights[4] * l_rec, weights[3] * l_bp,
                                   weights[0] * l_per, weights[1] * l_tex,
                                   weights[2] * l_adv, l_dis))
@@ -906,12 +976,16 @@ class SRNTT(object):
                 files.save_npz(
                     save_list=self.net_srntt.all_params,
                     name=join(self.save_dir, MODEL_FOLDER,
-                              str(epoch + step + 1) + '_' + SRNTT_MODEL_NAMES['conditional_texture_transfer']),
+                              str(step) + '_' + SRNTT_MODEL_NAMES['conditional_texture_transfer']),
+                    sess=sess)
+                files.save_npz(
+                    save_list=self.net_upscale.all_params,
+                    name=join(self.save_dir, MODEL_FOLDER, str(step) + '_' + SRNTT_MODEL_NAMES['content_extractor']),
                     sess=sess)
                 files.save_npz(
                     save_list=self.net_d.all_params,
                     name=join(self.save_dir, MODEL_FOLDER,
-                              str(epoch + step + 1) + '_' + SRNTT_MODEL_NAMES['discriminator']),
+                              str(step) + '_' + SRNTT_MODEL_NAMES['discriminator']),
                     sess=sess)
 
     def test(
@@ -1344,388 +1418,389 @@ class SRNTT(object):
             max_batch_size=16,
             save_ref=True
     ):
-        logging.info('Testing without references')
+        pass
+        # logging.info('Testing without references')
 
-        # ********************************************************************************
-        # *** check input and reference images
-        # ********************************************************************************
-        # check input_dir
-        img_input, img_hr = None, None
-        if isinstance(input_dir, np.ndarray):
-            assert len(input_dir.shape) == 3
-            img_input = np.copy(input_dir)
-        elif isfile(input_dir):
-            img_input = imread(input_dir, mode='RGB')
-        else:
-            logging.info('Unrecognized input_dir %s' % input_dir)
-            exit(0)
+        # # ********************************************************************************
+        # # *** check input and reference images
+        # # ********************************************************************************
+        # # check input_dir
+        # img_input, img_hr = None, None
+        # if isinstance(input_dir, np.ndarray):
+        #     assert len(input_dir.shape) == 3
+        #     img_input = np.copy(input_dir)
+        # elif isfile(input_dir):
+        #     img_input = imread(input_dir, mode='RGB')
+        # else:
+        #     logging.info('Unrecognized input_dir %s' % input_dir)
+        #     exit(0)
 
-        h, w, _ = img_input.shape
-        if is_original_image:
-            # ensure that the size of img_input can be divided by 4 with no remainder
-            h = int(h // 4 * 4)
-            w = int(w // 4 * 4)
-            img_hr = img_input[0:h, 0:w, ::]
-            img_input = imresize(img_hr, .25, interp='bicubic')
-            h, w, _ = img_input.shape
-        img_input_copy = np.copy(img_input)
+        # h, w, _ = img_input.shape
+        # if is_original_image:
+        #     # ensure that the size of img_input can be divided by 4 with no remainder
+        #     h = int(h // 4 * 4)
+        #     w = int(w // 4 * 4)
+        #     img_hr = img_input[0:h, 0:w, ::]
+        #     img_input = imresize(img_hr, .25, interp='bicubic')
+        #     h, w, _ = img_input.shape
+        # img_input_copy = np.copy(img_input)
 
-        if h * w * 16 > SRNTT.MAX_IMAGE_SIZE:  # avoid OOM
-            # split img_input into patches
-            patches = []
-            grids = []
-            patch_size = 128
-            stride = 100
-            for ind_row in range(0, h - (patch_size - stride), stride):
-                for ind_col in range(0, w - (patch_size - stride), stride):
-                    patch = img_input[ind_row:ind_row + patch_size, ind_col:ind_col + patch_size, :]
-                    if patch.shape != (patch_size, patch_size, 3):
-                        patch = np.pad(patch,
-                                       ((0, patch_size - patch.shape[0]), (0, patch_size - patch.shape[1]), (0, 0)),
-                                       'reflect')
-                    patches.append(patch)
-                    grids.append((ind_row * 4, ind_col * 4, patch_size * 4))
-            grids = np.stack(grids, axis=0)
-            img_input = np.stack(patches, axis=0)
-        else:
-            grids = None
-            img_input = np.expand_dims(img_input, axis=0)
+        # if h * w * 16 > SRNTT.MAX_IMAGE_SIZE:  # avoid OOM
+        #     # split img_input into patches
+        #     patches = []
+        #     grids = []
+        #     patch_size = 128
+        #     stride = 100
+        #     for ind_row in range(0, h - (patch_size - stride), stride):
+        #         for ind_col in range(0, w - (patch_size - stride), stride):
+        #             patch = img_input[ind_row:ind_row + patch_size, ind_col:ind_col + patch_size, :]
+        #             if patch.shape != (patch_size, patch_size, 3):
+        #                 patch = np.pad(patch,
+        #                                ((0, patch_size - patch.shape[0]), (0, patch_size - patch.shape[1]), (0, 0)),
+        #                                'reflect')
+        #             patches.append(patch)
+        #             grids.append((ind_row * 4, ind_col * 4, patch_size * 4))
+        #     grids = np.stack(grids, axis=0)
+        #     img_input = np.stack(patches, axis=0)
+        # else:
+        #     grids = None
+        #     img_input = np.expand_dims(img_input, axis=0)
 
-        # check ref_dir
-        is_ref = True
-        if ref_dir is None:
-            is_ref = False
-            ref_dir = input_dir
+        # # check ref_dir
+        # is_ref = True
+        # if ref_dir is None:
+        #     is_ref = False
+        #     ref_dir = input_dir
 
-        img_ref = []
+        # img_ref = []
 
-        if not isinstance(ref_dir, (list, tuple)):
-            ref_dir = [ref_dir]
+        # if not isinstance(ref_dir, (list, tuple)):
+        #     ref_dir = [ref_dir]
 
-        for ref in ref_dir:
-            if isinstance(ref, np.ndarray):
-                assert len(ref.shape) == 3
-                img_ref.append(np.copy(ref))
-            elif isfile(ref):
-                img_ref.append(imread(ref, mode='RGB'))
-            else:
-                logging.info('Unrecognized ref_dir type!')
-                exit(0)
+        # for ref in ref_dir:
+        #     if isinstance(ref, np.ndarray):
+        #         assert len(ref.shape) == 3
+        #         img_ref.append(np.copy(ref))
+        #     elif isfile(ref):
+        #         img_ref.append(imread(ref, mode='RGB'))
+        #     else:
+        #         logging.info('Unrecognized ref_dir type!')
+        #         exit(0)
 
-        if ref_scale <= 0:  # keep the same scale as HR image
-            img_ref = [imresize(img, (h * 4, w * 4), interp='bicubic') for img in img_ref]
-        elif ref_scale != 1:
-            img_ref = [imresize(img, float(ref_scale), interp='bicubic') for img in img_ref]
+        # if ref_scale <= 0:  # keep the same scale as HR image
+        #     img_ref = [imresize(img, (h * 4, w * 4), interp='bicubic') for img in img_ref]
+        # elif ref_scale != 1:
+        #     img_ref = [imresize(img, float(ref_scale), interp='bicubic') for img in img_ref]
 
-        for i in xrange(len(img_ref)):
-            h2, w2, _ = img_ref[i].shape
-            h2 = int(h2 // 4 * 4)
-            w2 = int(w2 // 4 * 4)
-            img_ref[i] = img_ref[i][0:h2, 0:w2, ::]
-            if not is_ref and is_original_image:
-                img_ref[i] = imresize(img_ref[i], .25, interp='bicubic')
+        # for i in xrange(len(img_ref)):
+        #     h2, w2, _ = img_ref[i].shape
+        #     h2 = int(h2 // 4 * 4)
+        #     w2 = int(w2 // 4 * 4)
+        #     img_ref[i] = img_ref[i][0:h2, 0:w2, ::]
+        #     if not is_ref and is_original_image:
+        #         img_ref[i] = imresize(img_ref[i], .25, interp='bicubic')
 
-        # create result folder
-        if result_dir is None:
-            result_dir = join(self.save_dir, 'test')
-        if not exists(result_dir):
-            makedirs(result_dir)
-        if not exists(join(result_dir, 'tmp')):
-            makedirs(join(result_dir, 'tmp'))
+        # # create result folder
+        # if result_dir is None:
+        #     result_dir = join(self.save_dir, 'test')
+        # if not exists(result_dir):
+        #     makedirs(result_dir)
+        # if not exists(join(result_dir, 'tmp')):
+        #     makedirs(join(result_dir, 'tmp'))
 
-        # ********************************************************************************
-        # *** build graph
-        # ********************************************************************************
-        if not self.is_model_built:
-            self.is_model_built = True
-            logging.info('Building graph ...')
-            # input image, range [-1, 1]
-            self.input_srntt = tf.placeholder(shape=[1, None, None, 3], dtype=tf.float32)
+        # # ********************************************************************************
+        # # *** build graph
+        # # ********************************************************************************
+        # if not self.is_model_built:
+        #     self.is_model_built = True
+        #     logging.info('Building graph ...')
+        #     # input image, range [-1, 1]
+        #     self.input_srntt = tf.placeholder(shape=[1, None, None, 3], dtype=tf.float32)
 
-            # reference images, range [0, 255]
-            self.input_vgg19 = tf.placeholder(shape=[1, None, None, 3], dtype=tf.float32)
+        #     # reference images, range [0, 255]
+        #     self.input_vgg19 = tf.placeholder(shape=[1, None, None, 3], dtype=tf.float32)
 
-            # swapped feature map and weights
-            self.maps = (
-                tf.placeholder(
-                    dtype=tf.float32,
-                    shape=(1, None, None, 256)),
-                tf.placeholder(
-                    dtype=tf.float32,
-                    shape=(1, None, None, 128)),
-                tf.placeholder(
-                    dtype=tf.float32,
-                    shape=(1, None, None, 64))
-            )
+        #     # swapped feature map and weights
+        #     self.maps = (
+        #         tf.placeholder(
+        #             dtype=tf.float32,
+        #             shape=(1, None, None, 256)),
+        #         tf.placeholder(
+        #             dtype=tf.float32,
+        #             shape=(1, None, None, 128)),
+        #         tf.placeholder(
+        #             dtype=tf.float32,
+        #             shape=(1, None, None, 64))
+        #     )
 
-            self.weights = tf.placeholder(
-                dtype=tf.float32,
-                shape=(1, None, None))
+        #     self.weights = tf.placeholder(
+        #         dtype=tf.float32,
+        #         shape=(1, None, None))
 
-            # SRNTT network
-            logging.info('Build SRNTT model')
-            if use_weight_map:
-                self.net_upscale, self.net_srntt = self.model(
-                    self.input_srntt, self.maps, weights=tf.expand_dims(self.weights, axis=-1), is_train=False)
-            else:
-                self.net_upscale, self.net_srntt = self.model(self.input_srntt, self.maps, is_train=False)
+        #     # SRNTT network
+        #     logging.info('Build SRNTT model')
+        #     if use_weight_map:
+        #         self.net_upscale, self.net_srntt = self.model(
+        #             self.input_srntt, self.maps, weights=tf.expand_dims(self.weights, axis=-1), is_train=False)
+        #     else:
+        #         self.net_upscale, self.net_srntt = self.model(self.input_srntt, self.maps, is_train=False)
 
-            # VGG19 network, input range [0, 255]
-            logging.info('Build VGG19 model')
-            self.net_vgg19 = VGG19(
-                input_image=self.input_vgg19,
-                model_path=self.vgg19_model_path,
-                final_layer='relu3_1'
-            )
+        #     # VGG19 network, input range [0, 255]
+        #     logging.info('Build VGG19 model')
+        #     self.net_vgg19 = VGG19(
+        #         input_image=self.input_vgg19,
+        #         model_path=self.vgg19_model_path,
+        #         final_layer='relu3_1'
+        #     )
 
-            # ********************************************************************************
-            # *** load models
-            # ********************************************************************************
-            config = tf.ConfigProto()
-            config.gpu_options.allow_growth = False
-            self.sess = tf.Session(config=config)
+        #     # ********************************************************************************
+        #     # *** load models
+        #     # ********************************************************************************
+        #     config = tf.ConfigProto()
+        #     config.gpu_options.allow_growth = False
+        #     self.sess = tf.Session(config=config)
 
-            # instant of Swap()
-            logging.info('Initialize the swapper')
-            self.swaper = Swap(sess=self.sess)
+        #     # instant of Swap()
+        #     logging.info('Initialize the swapper')
+        #     self.swaper = Swap(sess=self.sess)
 
-            logging.info('Loading models ...')  # changed.
-            self.sess.run(tf.global_variables_initializer())
+        #     logging.info('Loading models ...')  # changed.
+        #     self.sess.run(tf.global_variables_initializer())
 
-            # load pre-trained content extractor, including upscaling.
-            model_path = join(self.srntt_model_path, SRNTT_MODEL_NAMES['content_extractor'])
-            if files.load_and_assign_npz(
-                    sess=self.sess,
-                    name=model_path,
-                    network=self.net_upscale) is False:
-                logging.error('FAILED load %s' % model_path)
-                exit(0)
+        #     # load pre-trained content extractor, including upscaling.
+        #     model_path = join(self.srntt_model_path, SRNTT_MODEL_NAMES['content_extractor'])
+        #     if files.load_and_assign_npz(
+        #             sess=self.sess,
+        #             name=model_path,
+        #             network=self.net_upscale) is False:
+        #         logging.error('FAILED load %s' % model_path)
+        #         exit(0)
 
-            # load the specific conditional texture transfer model, specified by save_dir
-            if self.save_dir is None:
-                if use_init_model_only:
-                    model_path = join(self.srntt_model_path, SRNTT_MODEL_NAMES['init'])
-                    if files.load_and_assign_npz(
-                            sess=self.sess,
-                            name=model_path,
-                            network=self.net_srntt):
-                        logging.info('SUCCESS load %s' % model_path)
-                    else:
-                        logging.error('FAILED load %s' % model_path)
-                        exit(0)
-                else:
-                    model_path = join(self.srntt_model_path, SRNTT_MODEL_NAMES['conditional_texture_transfer'])
-                    if files.load_and_assign_npz(
-                            sess=self.sess,
-                            name=model_path,
-                            network=self.net_srntt):
-                        logging.info('SUCCESS load %s' % model_path)
-                    else:
-                        logging.error('FAILED load %s' % model_path)
-                        exit(0)
-            else:
-                if use_init_model_only:
-                    model_path = join(self.save_dir, MODEL_FOLDER, SRNTT_MODEL_NAMES['init'])
-                    if files.load_and_assign_npz(
-                            sess=self.sess,
-                            name=model_path,
-                            network=self.net_srntt):
-                        logging.info('SUCCESS load %s' % model_path)
-                    else:
-                        logging.error('FAILED load %s' % model_path)
-                        exit(0)
-                else:
-                    model_path = join(self.save_dir, MODEL_FOLDER,
-                                      SRNTT_MODEL_NAMES['conditional_texture_transfer'])
-                    if files.load_and_assign_npz(
-                            sess=self.sess,
-                            name=model_path,
-                            network=self.net_srntt):
-                        logging.info('SUCCESS load %s' % model_path)
-                    else:
-                        logging.error('FAILED load %s' % model_path)
-                        exit(0)
+        #     # load the specific conditional texture transfer model, specified by save_dir
+        #     if self.save_dir is None:
+        #         if use_init_model_only:
+        #             model_path = join(self.srntt_model_path, SRNTT_MODEL_NAMES['init'])
+        #             if files.load_and_assign_npz(
+        #                     sess=self.sess,
+        #                     name=model_path,
+        #                     network=self.net_srntt):
+        #                 logging.info('SUCCESS load %s' % model_path)
+        #             else:
+        #                 logging.error('FAILED load %s' % model_path)
+        #                 exit(0)
+        #         else:
+        #             model_path = join(self.srntt_model_path, SRNTT_MODEL_NAMES['conditional_texture_transfer'])
+        #             if files.load_and_assign_npz(
+        #                     sess=self.sess,
+        #                     name=model_path,
+        #                     network=self.net_srntt):
+        #                 logging.info('SUCCESS load %s' % model_path)
+        #             else:
+        #                 logging.error('FAILED load %s' % model_path)
+        #                 exit(0)
+        #     else:
+        #         if use_init_model_only:
+        #             model_path = join(self.save_dir, MODEL_FOLDER, SRNTT_MODEL_NAMES['init'])
+        #             if files.load_and_assign_npz(
+        #                     sess=self.sess,
+        #                     name=model_path,
+        #                     network=self.net_srntt):
+        #                 logging.info('SUCCESS load %s' % model_path)
+        #             else:
+        #                 logging.error('FAILED load %s' % model_path)
+        #                 exit(0)
+        #         else:
+        #             model_path = join(self.save_dir, MODEL_FOLDER,
+        #                               SRNTT_MODEL_NAMES['conditional_texture_transfer'])
+        #             if files.load_and_assign_npz(
+        #                     sess=self.sess,
+        #                     name=model_path,
+        #                     network=self.net_srntt):
+        #                 logging.info('SUCCESS load %s' % model_path)
+        #             else:
+        #                 logging.error('FAILED load %s' % model_path)
+        #                 exit(0)
 
-        logging.info('**********'
-                     ' Start testing '
-                     '**********')
+        # logging.info('**********'
+        #              ' Start testing '
+        #              '**********')
 
-        matching_layer = self.matching_layer
+        # matching_layer = self.matching_layer
 
-        logging.info('Get VGG19 Feature Maps')
+        # logging.info('Get VGG19 Feature Maps')
 
-        logging.info('\t[1/2] Getting feature map of Ref image ...')
-        t_start = time.time()
-        map_ref = []
-        for i in img_ref:
-            map_ref.append(
-                self.net_vgg19.get_layer_output(
-                    sess=self.sess, layer_name=matching_layer,
-                    feed_image=i)
-            )
-        styles = [[] for _ in xrange(len(matching_layer))]
-        for i in map_ref:
-            for j in xrange(len(styles)):
-                styles[j].append(i[j])
+        # logging.info('\t[1/2] Getting feature map of Ref image ...')
+        # t_start = time.time()
+        # map_ref = []
+        # for i in img_ref:
+        #     map_ref.append(
+        #         self.net_vgg19.get_layer_output(
+        #             sess=self.sess, layer_name=matching_layer,
+        #             feed_image=i)
+        #     )
+        # styles = [[] for _ in xrange(len(matching_layer))]
+        # for i in map_ref:
+        #     for j in xrange(len(styles)):
+        #         styles[j].append(i[j])
 
-        logging.info('\t[2/2] Getting feature map of LR->SR Ref image ...')
-        map_ref_sr = []
-        if is_ref:
-            for i in img_ref:
-                img_ref_downscale = imresize(i, .25, interp='bicubic')
-                img_ref_upscale = self.net_upscale.outputs.eval({self.input_srntt: [img_ref_downscale / 127.5 - 1]},
-                                                                session=self.sess)
-                img_ref_upscale = (img_ref_upscale + 1) * 127.5
-                map_ref_sr.append(
-                    self.net_vgg19.get_layer_output(
-                        sess=self.sess, layer_name=matching_layer[0],
-                        feed_image=img_ref_upscale)
-                )
-        else:
-            map_ref_sr = styles
+        # logging.info('\t[2/2] Getting feature map of LR->SR Ref image ...')
+        # map_ref_sr = []
+        # if is_ref:
+        #     for i in img_ref:
+        #         img_ref_downscale = imresize(i, .25, interp='bicubic')
+        #         img_ref_upscale = self.net_upscale.outputs.eval({self.input_srntt: [img_ref_downscale / 127.5 - 1]},
+        #                                                         session=self.sess)
+        #         img_ref_upscale = (img_ref_upscale + 1) * 127.5
+        #         map_ref_sr.append(
+        #             self.net_vgg19.get_layer_output(
+        #                 sess=self.sess, layer_name=matching_layer[0],
+        #                 feed_image=img_ref_upscale)
+        #         )
+        # else:
+        #     map_ref_sr = styles
 
-        # swap ref to in
-        logging.info('Patch-Wise Matching and Swapping')
-        for idx, patch in enumerate(img_input):
-            logging.info('\tPatch %03d/%03d' % (idx + 1, img_input.shape[0]))
+        # # swap ref to in
+        # logging.info('Patch-Wise Matching and Swapping')
+        # for idx, patch in enumerate(img_input):
+        #     logging.info('\tPatch %03d/%03d' % (idx + 1, img_input.shape[0]))
 
-            # skip if the results exists
-            if exists(join(result_dir, 'tmp', 'srntt_%05d.png' % idx)):
-                continue
+        #     # skip if the results exists
+        #     if exists(join(result_dir, 'tmp', 'srntt_%05d.png' % idx)):
+        #         continue
 
-            logging.info('\tGetting feature map of input LR image ...')
+        #     logging.info('\tGetting feature map of input LR image ...')
 
-            if 'Urban' in input_dir:
-                img_input_upscale = imread(
-                    join('../EDSR-PyTorch/test_Urban100_MDSR', split(input_dir)[-1], 'SRNTT.png'),
-                    mode='RGB').astype(np.float32)
-            elif 'CUFED5' in input_dir and False:
-                img_input_upscale = imread(
-                    join('../EDSR-PyTorch/test_CUFED5_MDSR', split(input_dir)[-1], 'SRNTT.png'),
-                    mode='RGB').astype(np.float32)
-            elif 'Sun80' in input_dir or 'sun80' in input_dir:
-                img_input_upscale = imread(
-                    join('../EDSR-PyTorch/test_Sun100_MDSR', split(input_dir)[-1].split('.')[0], 'SRNTT.png'),
-                    mode='RGB').astype(np.float32)
-            else:
-                img_input_upscale = self.net_upscale.outputs.eval({self.input_srntt: [patch / 127.5 - 1]},
-                                                                  session=self.sess)
-                img_input_upscale = (img_input_upscale + 1) * 127.5
+        #     if 'Urban' in input_dir:
+        #         img_input_upscale = imread(
+        #             join('../EDSR-PyTorch/test_Urban100_MDSR', split(input_dir)[-1], 'SRNTT.png'),
+        #             mode='RGB').astype(np.float32)
+        #     elif 'CUFED5' in input_dir and False:
+        #         img_input_upscale = imread(
+        #             join('../EDSR-PyTorch/test_CUFED5_MDSR', split(input_dir)[-1], 'SRNTT.png'),
+        #             mode='RGB').astype(np.float32)
+        #     elif 'Sun80' in input_dir or 'sun80' in input_dir:
+        #         img_input_upscale = imread(
+        #             join('../EDSR-PyTorch/test_Sun100_MDSR', split(input_dir)[-1].split('.')[0], 'SRNTT.png'),
+        #             mode='RGB').astype(np.float32)
+        #     else:
+        #         img_input_upscale = self.net_upscale.outputs.eval({self.input_srntt: [patch / 127.5 - 1]},
+        #                                                           session=self.sess)
+        #         img_input_upscale = (img_input_upscale + 1) * 127.5
 
-            if is_ref:
-                map_sr = self.net_vgg19.get_layer_output(
-                    sess=self.sess, layer_name=matching_layer[0], feed_image=img_input_upscale)
-            else:
-                map_sr = self.net_vgg19.get_layer_output(
-                    sess=self.sess, layer_name=matching_layer, feed_image=img_input_upscale)
+        #     if is_ref:
+        #         map_sr = self.net_vgg19.get_layer_output(
+        #             sess=self.sess, layer_name=matching_layer[0], feed_image=img_input_upscale)
+        #     else:
+        #         map_sr = self.net_vgg19.get_layer_output(
+        #             sess=self.sess, layer_name=matching_layer, feed_image=img_input_upscale)
 
-            logging.info('\tMatching and swapping features ...')
-            if is_ref:
-                map_target, weight, _ = self.swaper.conditional_swap_multi_layer(
-                    content=map_sr,
-                    style=styles[0],
-                    condition=map_ref_sr,
-                    other_styles=styles[1:],
-                    is_weight=use_weight_map
-                )
-            else:
-                map_target, weight = [], []
-                for i in xrange(len(matching_layer)):
-                    m_target, w, _ = self.swaper.conditional_swap_multi_layer(
-                        content=map_sr[i],
-                        style=styles[i],
-                        condition=map_ref_sr[i],
-                        is_weight=use_weight_map
-                    )
-                    map_target.append(np.squeeze(m_target))
-                    weight.append(w)
+        #     logging.info('\tMatching and swapping features ...')
+        #     if is_ref:
+        #         map_target, weight, _ = self.swaper.conditional_swap_multi_layer(
+        #             content=map_sr,
+        #             style=styles[0],
+        #             condition=map_ref_sr,
+        #             other_styles=styles[1:],
+        #             is_weight=use_weight_map
+        #         )
+        #     else:
+        #         map_target, weight = [], []
+        #         for i in xrange(len(matching_layer)):
+        #             m_target, w, _ = self.swaper.conditional_swap_multi_layer(
+        #                 content=map_sr[i],
+        #                 style=styles[i],
+        #                 condition=map_ref_sr[i],
+        #                 is_weight=use_weight_map
+        #             )
+        #             map_target.append(np.squeeze(m_target))
+        #             weight.append(w)
 
-            logging.info('Obtain SR patches')
-            if use_weight_map:
-                weight = np.pad(weight, ((1, 1), (1, 1)), 'edge')
-                out_srntt, out_upscale = self.sess.run(
-                    fetches=[self.net_srntt.outputs, self.net_upscale.outputs],
-                    feed_dict={
-                        self.input_srntt: [patch / 127.5 - 1],
-                        self.maps: [np.expand_dims(m, axis=0) for m in map_target],
-                        self.weights: [weight]
-                    }
-                )
-            else:
-                time_step_1 = time.time()
-                out_srntt, out_upscale = self.sess.run(
-                    fetches=[self.net_srntt.outputs, self.net_upscale.outputs],
-                    feed_dict={
-                        self.input_srntt: [patch / 127.5 - 1],
-                        self.maps: [np.expand_dims(m, axis=0) for m in map_target],
-                    }
-                )
-                time_step_2 = time.time()
+        #     logging.info('Obtain SR patches')
+        #     if use_weight_map:
+        #         weight = np.pad(weight, ((1, 1), (1, 1)), 'edge')
+        #         out_srntt, out_upscale = self.sess.run(
+        #             fetches=[self.net_srntt.outputs, self.net_upscale.outputs],
+        #             feed_dict={
+        #                 self.input_srntt: [patch / 127.5 - 1],
+        #                 self.maps: [np.expand_dims(m, axis=0) for m in map_target],
+        #                 self.weights: [weight]
+        #             }
+        #         )
+        #     else:
+        #         time_step_1 = time.time()
+        #         out_srntt, out_upscale = self.sess.run(
+        #             fetches=[self.net_srntt.outputs, self.net_upscale.outputs],
+        #             feed_dict={
+        #                 self.input_srntt: [patch / 127.5 - 1],
+        #                 self.maps: [np.expand_dims(m, axis=0) for m in map_target],
+        #             }
+        #         )
+        #         time_step_2 = time.time()
 
-                logging.info('Time elapsed: PM: %.3f sec, SR: %.3f sec' %
-                             ((time_step_1 - t_start), (time_step_2 - time_step_1)))
+        #         logging.info('Time elapsed: PM: %.3f sec, SR: %.3f sec' %
+        #                      ((time_step_1 - t_start), (time_step_2 - time_step_1)))
 
-            imsave(join(result_dir, 'tmp', 'srntt_%05d.png' % idx),
-                   np.round((out_srntt.squeeze() + 1) * 127.5).astype(np.uint8))
-            imsave(join(result_dir, 'tmp', 'upscale_%05d.png' % idx),
-                   np.round((out_upscale.squeeze() + 1) * 127.5).astype(np.uint8))
-            logging.info('Saved to %s' % join(result_dir, 'tmp', 'srntt_%05d.png' % idx))
-        logging.info('Reconstruct SR image')
-        out_srntt_files = sorted(glob(join(result_dir, 'tmp', 'srntt_*.png')))
-        out_upscale_files = sorted(glob(join(result_dir, 'tmp', 'upscale_*.png')))
+        #     imsave(join(result_dir, 'tmp', 'srntt_%05d.png' % idx),
+        #            np.round((out_srntt.squeeze() + 1) * 127.5).astype(np.uint8))
+        #     imsave(join(result_dir, 'tmp', 'upscale_%05d.png' % idx),
+        #            np.round((out_upscale.squeeze() + 1) * 127.5).astype(np.uint8))
+        #     logging.info('Saved to %s' % join(result_dir, 'tmp', 'srntt_%05d.png' % idx))
+        # logging.info('Reconstruct SR image')
+        # out_srntt_files = sorted(glob(join(result_dir, 'tmp', 'srntt_*.png')))
+        # out_upscale_files = sorted(glob(join(result_dir, 'tmp', 'upscale_*.png')))
 
-        if grids is not None:
-            patch_size = grids[0, 2]
-            h_l, w_l = grids[-1, 0] + patch_size, grids[-1, 1] + patch_size
-            out_upscale_large = np.zeros((h_l, w_l, 3), dtype=np.float32)
-            out_srntt_large = np.copy(out_upscale_large)
-            counter = np.zeros_like(out_srntt_large, dtype=np.float32)
-            for idx in xrange(len(grids)):
-                out_upscale_large[
-                grids[idx, 0]:grids[idx, 0] + patch_size,
-                grids[idx, 1]:grids[idx, 1] + patch_size, :] += imread(out_upscale_files[idx], mode='RGB').astype(
-                    np.float32)
+        # if grids is not None:
+        #     patch_size = grids[0, 2]
+        #     h_l, w_l = grids[-1, 0] + patch_size, grids[-1, 1] + patch_size
+        #     out_upscale_large = np.zeros((h_l, w_l, 3), dtype=np.float32)
+        #     out_srntt_large = np.copy(out_upscale_large)
+        #     counter = np.zeros_like(out_srntt_large, dtype=np.float32)
+        #     for idx in xrange(len(grids)):
+        #         out_upscale_large[
+        #         grids[idx, 0]:grids[idx, 0] + patch_size,
+        #         grids[idx, 1]:grids[idx, 1] + patch_size, :] += imread(out_upscale_files[idx], mode='RGB').astype(
+        #             np.float32)
 
-                out_srntt_large[
-                grids[idx, 0]:grids[idx, 0] + patch_size,
-                grids[idx, 1]:grids[idx, 1] + patch_size, :] += imread(out_srntt_files[idx], mode='RGB').astype(
-                    np.float32)
+        #         out_srntt_large[
+        #         grids[idx, 0]:grids[idx, 0] + patch_size,
+        #         grids[idx, 1]:grids[idx, 1] + patch_size, :] += imread(out_srntt_files[idx], mode='RGB').astype(
+        #             np.float32)
 
-                counter[
-                grids[idx, 0]:grids[idx, 0] + patch_size,
-                grids[idx, 1]:grids[idx, 1] + patch_size, :] += 1
+        #         counter[
+        #         grids[idx, 0]:grids[idx, 0] + patch_size,
+        #         grids[idx, 1]:grids[idx, 1] + patch_size, :] += 1
 
-            out_upscale_large /= counter
-            out_srntt_large /= counter
-            out_upscale = out_upscale_large[:(h * 4), :(w * 4), :]
-            out_srntt = out_srntt_large[:(h * 4), :(w * 4), :]
-        else:
-            out_upscale = imread(out_upscale_files[0], mode='RGB')
-            out_srntt = imread(out_srntt_files[0], mode='RGB')
+        #     out_upscale_large /= counter
+        #     out_srntt_large /= counter
+        #     out_upscale = out_upscale_large[:(h * 4), :(w * 4), :]
+        #     out_srntt = out_srntt_large[:(h * 4), :(w * 4), :]
+        # else:
+        #     out_upscale = imread(out_upscale_files[0], mode='RGB')
+        #     out_srntt = imread(out_srntt_files[0], mode='RGB')
 
-        t_end = time.time()
+        # t_end = time.time()
 
-        # log run time
-        with open(join(result_dir, 'run_time.txt'), 'w') as f:
-            line = '%02d min %02d sec\n' % ((t_end - t_start) // 60, (t_end - t_start) % 60)
-            f.write(line)
-            f.close()
+        # # log run time
+        # with open(join(result_dir, 'run_time.txt'), 'w') as f:
+        #     line = '%02d min %02d sec\n' % ((t_end - t_start) // 60, (t_end - t_start) % 60)
+        #     f.write(line)
+        #     f.close()
 
-        # save results
-        # save HR image if it exists
-        if img_hr is not None:
-            imsave(join(result_dir, 'HR.png'), img_hr)
-        # save LR (input) image
-        imsave(join(result_dir, 'LR.png'), img_input_copy)
-        # save reference image(s)
-        if save_ref:
-            for idx, ref in enumerate(img_ref):
-                imsave(join(result_dir, 'Ref_%02d.png' % idx), ref)
-        # save bicubic
-        imsave(join(result_dir, 'Bicubic.png'), imresize(img_input_copy, 4., interp='bicubic'))
-        # save SR images
-        imsave(join(result_dir, 'Upscale.png'), np.array(out_upscale).squeeze().round().clip(0, 255).astype(np.uint8))
-        imsave(join(result_dir, 'SRNTT.png'), np.array(out_srntt).squeeze().round().clip(0, 255).astype(np.uint8))
-        logging.info('Saved results to folder %s' % result_dir)
+        # # save results
+        # # save HR image if it exists
+        # if img_hr is not None:
+        #     imsave(join(result_dir, 'HR.png'), img_hr)
+        # # save LR (input) image
+        # imsave(join(result_dir, 'LR.png'), img_input_copy)
+        # # save reference image(s)
+        # if save_ref:
+        #     for idx, ref in enumerate(img_ref):
+        #         imsave(join(result_dir, 'Ref_%02d.png' % idx), ref)
+        # # save bicubic
+        # imsave(join(result_dir, 'Bicubic.png'), imresize(img_input_copy, 4., interp='bicubic'))
+        # # save SR images
+        # imsave(join(result_dir, 'Upscale.png'), np.array(out_upscale).squeeze().round().clip(0, 255).astype(np.uint8))
+        # imsave(join(result_dir, 'SRNTT.png'), np.array(out_srntt).squeeze().round().clip(0, 255).astype(np.uint8))
+        # logging.info('Saved results to folder %s' % result_dir)
 
-        return np.array(out_srntt).squeeze().round().clip(0, 255).astype(np.uint8)
+        # return np.array(out_srntt).squeeze().round().clip(0, 255).astype(np.uint8)

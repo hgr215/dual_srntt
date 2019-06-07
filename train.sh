@@ -115,12 +115,13 @@ python main.py \
     --input_dir data/train/dual_hw/input \
     --ref_dir data/train/dual_hw/ref \
     --map_dir data/train/dual_hw/map_321_2x \
-    --use_pretrained_model False \
+    --load_pre_CE False \
+    --load_pre_srntt False \
     --num_init_epochs 2 \
     --num_epochs 35 \
-    --save_dir model_hw_init_p10s2 \
+    --save_dir modelWithCE_hw_init \
     --x2_train \
-    --patch_size 10 \
-    --stride 2 \
-    --cuda 1
+    --patch_size 3 \
+    --stride 1 \
+    --cuda 3
 

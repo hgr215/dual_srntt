@@ -33,6 +33,13 @@ parser.add_argument('--num_res_blocks', type=int,
                     default=16, help='number of residual blocks')
 
 # train parameters
+parser.add_argument('--load_pre_CE', type=str2bool, default=False,
+                    help='If used, load the $step CE and upscale to init loading his when fail. Else use inited params')
+parser.add_argument('--load_pre_srntt', type=str2bool, default=False,help='same as --use_pre_CE')
+parser.add_argument('--use_init_model_only', type=str2bool, default=False,help='effect if load his model')
+parser.add_argument('--load_step', type=int, default=-1,
+                    help='if you load pretrained model, which step?')
+
 parser.add_argument('--hot_start', type=str2bool,
                     default=True, help='train without map_321 files')
 parser.add_argument('--input_dir', type=str,
@@ -46,9 +53,7 @@ parser.add_argument('--num_init_epochs', type=int, default=5)
 parser.add_argument('--num_epochs', type=int, default=50)
 parser.add_argument('--learning_rate', type=float, default=1e-4)
 parser.add_argument('--beta1', type=float, default=0.9)
-parser.add_argument('--use_pretrained_model', type=str2bool, default=True)
-parser.add_argument('--use_init_model_only', type=str2bool, default=False,
-                    help='effect if use_pretrained_model is true')
+
 parser.add_argument('--w_per', type=float, default=1e-4,
                     help='weight of perceptual loss between output and ground truth')
 parser.add_argument('--w_tex', type=float, default=1e-4,
@@ -75,8 +80,7 @@ parser.add_argument('--use_lower_layers_in_per_loss',
 parser.add_argument('--is_gan', type=str2bool, default=True,
                     help='whether to train with gan loss')
 
-parser.add_argument('--load_step', type=int, default=0,
-                    help='if you load pretrained model, which step?')
+
 
 # test parameters
 parser.add_argument('--patch_size', type=int, default=3)
@@ -118,7 +122,7 @@ if args.is_train:
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
     with open(os.path.join(args.save_dir, 'arguments.txt'), 'w') as f:
-        print(args)
+        # print(args)
         for arg in sorted(vars(args)):
             print(arg)
             line = '{:>30}\t{:<10}\n'.format(arg, getattr(args, arg))
@@ -130,6 +134,7 @@ if args.is_train:
         from SRNTT.model import *
 
         srntt = SRNTT(
+            args=args,
             srntt_model_path=args.srntt_model_path,
             vgg19_model_path=args.vgg19_model_path,
             save_dir=args.save_dir,
@@ -145,6 +150,7 @@ if args.is_train:
         from SRNTT.model_x2 import *
 
         srntt = SRNTT(
+            args=args,
             srntt_model_path=args.srntt_model_path,
             vgg19_model_path=args.vgg19_model_path,
             save_dir=args.save_dir,
@@ -166,7 +172,7 @@ if args.is_train:
         num_epochs=args.num_epochs,
         learning_rate=args.learning_rate,
         beta1=args.beta1,
-        use_pretrained_model=args.use_pretrained_model,
+        # use_pretrained_model=args.use_pretrained_model,
         use_init_model_only=args.use_init_model_only,
         weights=(args.w_per, args.w_tex, args.w_adv, args.w_bp, args.w_rec),
         vgg_perceptual_loss_layer=args.vgg_perceptual_loss_layer,
@@ -200,6 +206,7 @@ else:
         from SRNTT.model import *
 
         srntt = SRNTT(
+            args=args,
             srntt_model_path=args.srntt_model_path,
             vgg19_model_path=args.vgg19_model_path,
             save_dir=args.save_dir,
@@ -213,6 +220,7 @@ else:
 
         print(args.vgg19_model_path)
         srntt = SRNTT(
+            args=args,
             srntt_model_path=args.srntt_model_path,
             vgg19_model_path=args.vgg19_model_path,
             save_dir=args.save_dir,
@@ -230,7 +238,7 @@ else:
             input_dir=args.input_dir,
             ref_dir=args.ref_dir,
             # --seems no use for test.
-            use_pretrained_model=args.use_pretrained_model,
+            # use_pretrained_model=args.use_pretrained_model,
             use_init_model_only=args.use_init_model_only,
             use_weight_map=args.use_weight_map,
             result_dir=args.result_dir,
@@ -254,7 +262,7 @@ else:
                     input_dir=path_i,
                     ref_dir=path_r,
                     # --seems no use for test.
-                    use_pretrained_model=args.use_pretrained_model,
+                    # use_pretrained_model=args.use_pretrained_model,
                     use_init_model_only=args.use_init_model_only,
                     use_weight_map=args.use_weight_map,
                     result_dir=args.result_dir,
