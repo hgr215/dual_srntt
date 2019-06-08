@@ -1,6 +1,6 @@
 import os
 import argparse
-import ptvsd
+# import ptvsd
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
@@ -98,11 +98,11 @@ parser.add_argument('--is_original_image', type=str2bool, default=True)
 
 args = parser.parse_args()
 
-if args.debug:
-    ptvsd.enable_attach()
-    print('---- Wait for debugger attach:\n')
-    ptvsd.wait_for_attach()
-    print('---- Debugger attached！')
+# if args.debug:
+#     ptvsd.enable_attach()
+#     print('---- Wait for debugger attach:\n')
+#     ptvsd.wait_for_attach()
+#     print('---- Debugger attached！')
 
 os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda
 
