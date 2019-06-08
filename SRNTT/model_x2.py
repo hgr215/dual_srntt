@@ -529,9 +529,12 @@ class SRNTT(object):
 
         # optimizer
         optimizer_init = tf.train.AdamOptimizer(
-            learning_rate=learning_rate, beta1=beta1).minimize(loss_init, var_list=var_g+var_e)
+            learning_rate=learning_rate, beta1=beta1).minimize(loss_init,
+                                                               var_list=var_g + var_e if self.args.train_CE else var_g)
         optimizer = tf.train.AdamOptimizer(
-            learning_rate=decayed_learning_rate, beta1=beta1).minimize(loss, var_list=var_g+var_e, global_step=global_step)
+            learning_rate=decayed_learning_rate, beta1=beta1).minimize(loss,
+                                                                       var_list=var_g + var_e if self.args.train_CE else var_g,
+                                                                       global_step=global_step)
         optimizer_d = tf.train.AdamOptimizer(
             learning_rate=decayed_learning_rate, beta1=beta1).minimize(loss_d, var_list=var_d, global_step=global_step)
 
@@ -590,7 +593,7 @@ class SRNTT(object):
             #         exit(0)
             # else:
             #     print('Use random inited CE params!')
-                    
+
             # vis.save_images(
             #     np.round((self.net_upscale.outputs.eval({self.input: samples_input}) + 1) * 127.5).astype(np.uint8),
             #     [frame_size, frame_size], join(self.save_dir, SAMPLE_FOLDER, 'Upscale.png'))
@@ -598,15 +601,15 @@ class SRNTT(object):
             # load the specific texture transfer model, specified by save_dir
             # load CE:
             if self.args.load_pre_CE:
-                model_path = join(self.save_dir, MODEL_FOLDER, '%d_' % (step,) +SRNTT_MODEL_NAMES['content_extractor'])
-                if files.load_and_assign_npz(sess=sess,name=model_path,network=self.net_upscale):
+                model_path = join(self.save_dir, MODEL_FOLDER, '%d_' % (step,) + SRNTT_MODEL_NAMES['content_extractor'])
+                if files.load_and_assign_npz(sess=sess, name=model_path, network=self.net_upscale):
                     # num_init_epochs = 0
                     is_load_success = True
                     logging.info('SUCCESS load %s' % model_path)
                 else:
                     print('Loading your model CE failed, loading his model:')
                     model_path = join(self.srntt_model_path, MODEL_FOLDER, SRNTT_MODEL_NAMES['content_extractor'])
-                    if files.load_and_assign_npz(sess=sess,name=model_path,network=self.net_upscale):
+                    if files.load_and_assign_npz(sess=sess, name=model_path, network=self.net_upscale):
                         # num_init_epochs = 0
                         is_load_success = True
                         logging.info('SUCCESS load %s' % model_path)
@@ -615,20 +618,21 @@ class SRNTT(object):
                         exit(0)
             else:
                 print('Init CE params with random')
-            
+
             if self.args.load_pre_srntt:
-                model_path = join(self.save_dir, MODEL_FOLDER, '%d_' % (step,) +SRNTT_MODEL_NAMES['conditional_texture_transfer'])
-                if files.load_and_assign_npz(sess=sess,name=model_path,network=self.net_srntt):
-                    num_init_epochs -=(step+1)
-                    if num_init_epochs<0: num_init_epochs=0
+                model_path = join(self.save_dir, MODEL_FOLDER,
+                                  '%d_' % (step,) + SRNTT_MODEL_NAMES['conditional_texture_transfer'])
+                if files.load_and_assign_npz(sess=sess, name=model_path, network=self.net_srntt):
+                    num_init_epochs -= (step + 1)
+                    if num_init_epochs < 0: num_init_epochs = 0
                     is_load_success = True
                     logging.info('SUCCESS load %s' % model_path)
 
                     model_path = join(self.save_dir, MODEL_FOLDER, '%d_' % (step,) + SRNTT_MODEL_NAMES['discriminator'])
                     if files.load_and_assign_npz(
-                        sess=sess,
-                        name=model_path,
-                        network=self.net_d):
+                            sess=sess,
+                            name=model_path,
+                            network=self.net_d):
                         logging.info('SUCCESS load %s' % model_path)
                     else:
                         logging.warning('FAILED load %s' % model_path)
@@ -637,8 +641,9 @@ class SRNTT(object):
                     if use_init_model_only:
                         model_path = join(self.srntt_model_path, MODEL_FOLDER, SRNTT_MODEL_NAMES['init'])
                     else:
-                        model_path = join(self.srntt_model_path, MODEL_FOLDER, SRNTT_MODEL_NAMES['conditional_texture_transfer'])
-                    if files.load_and_assign_npz(sess=sess,name=model_path,network=self.net_srntt):
+                        model_path = join(self.srntt_model_path, MODEL_FOLDER,
+                                          SRNTT_MODEL_NAMES['conditional_texture_transfer'])
+                    if files.load_and_assign_npz(sess=sess, name=model_path, network=self.net_srntt):
                         # num_init_epochs = 0
                         is_load_success = True
                         logging.info('SUCCESS load %s' % model_path)
@@ -647,9 +652,7 @@ class SRNTT(object):
                         exit(0)
             else:
                 print('Init srntt params with random')
-                if not self.args.load_pre_CE:step=-1
-
-                    
+                if not self.args.load_pre_CE: step = -1
 
             # is_load_success = False
             # if use_init_model_only:
@@ -725,7 +728,7 @@ class SRNTT(object):
             current_eta = None
             idx = np.arange(num_files)
             for epoch in xrange(num_init_epochs):
-                step+=1
+                step += 1
                 np.random.shuffle(idx)  # --for each epoch, order is not same
                 for n_batch in xrange(num_batches):
                     step_time = time.time()
@@ -830,7 +833,8 @@ class SRNTT(object):
                 # save model for each epoch
                 files.save_npz(
                     save_list=self.net_srntt.all_params,
-                    name=join(self.save_dir, MODEL_FOLDER, str(step) + '_' + SRNTT_MODEL_NAMES['conditional_texture_transfer']),
+                    name=join(self.save_dir, MODEL_FOLDER,
+                              str(step) + '_' + SRNTT_MODEL_NAMES['conditional_texture_transfer']),
                     sess=sess)
 
                 files.save_npz(
@@ -840,8 +844,8 @@ class SRNTT(object):
 
             # train with all losses
             current_eta = None
-            for epoch in xrange(num_epochs-num_init_epochs):
-                step+=1
+            for epoch in xrange(num_epochs - num_init_epochs):
+                step += 1
                 np.random.shuffle(idx)
                 for n_batch in xrange(num_batches):
                     step_time = time.time()
@@ -959,7 +963,7 @@ class SRNTT(object):
                                  '\tl_rec = %.4f\tl_bp  = %.4f\n'
                                  '\tl_per = %.4f\tl_tex = %.4f\n'
                                  '\tl_adv = %.4f\tl_dis = %.4f' %
-                                 (step+1, num_epochs, n_batch + 1, num_batches, eta_str,
+                                 (step + 1, num_epochs, n_batch + 1, num_batches, eta_str,
                                   weights[4] * l_rec, weights[3] * l_bp,
                                   weights[0] * l_per, weights[1] * l_tex,
                                   weights[2] * l_adv, l_dis))

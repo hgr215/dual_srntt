@@ -1,5 +1,6 @@
 import os
 import argparse
+
 # import ptvsd
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
@@ -33,10 +34,11 @@ parser.add_argument('--num_res_blocks', type=int,
                     default=16, help='number of residual blocks')
 
 # train parameters
+parser.add_argument('--train_CE', type=str2bool, default=True, help='If true, train the param of content extracor')
 parser.add_argument('--load_pre_CE', type=str2bool, default=False,
                     help='If used, load the $step CE and upscale to init loading his when fail. Else use inited params')
-parser.add_argument('--load_pre_srntt', type=str2bool, default=False,help='same as --use_pre_CE')
-parser.add_argument('--use_init_model_only', type=str2bool, default=False,help='effect if load his model')
+parser.add_argument('--load_pre_srntt', type=str2bool, default=False, help='same as --use_pre_CE')
+parser.add_argument('--use_init_model_only', type=str2bool, default=False, help='effect if load his model')
 parser.add_argument('--load_step', type=int, default=-1,
                     help='if you load pretrained model, which step?')
 
@@ -79,8 +81,6 @@ parser.add_argument('--use_lower_layers_in_per_loss',
                     type=str2bool, default=False)
 parser.add_argument('--is_gan', type=str2bool, default=True,
                     help='whether to train with gan loss')
-
-
 
 # test parameters
 parser.add_argument('--patch_size', type=int, default=3)
