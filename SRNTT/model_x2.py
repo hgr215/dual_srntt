@@ -77,7 +77,7 @@ class SRNTT(object):
 
     def model(
             self,
-            inputs,  # LR images, in range of [-1, 1]
+            inputs,  # list of SU features(tensors), including relu3-1 2-1 and 1-1(default).
             maps=None,  # texture feature maps after texture swapping
             weights=None,  # weights of each pixel on the maps
             is_train=True,
@@ -91,41 +91,42 @@ class SRNTT(object):
         w_init = tf.random_normal_initializer(stddev=0.02)
         b_init = None
         g_init = tf.random_normal_initializer(1., 0.02)
-        with tf.variable_scope("content_extractor", reuse=reuse):
-            layers.set_name_reuse(reuse)
-            net = InputLayer(inputs=inputs, name='input')
-            net = Conv2d(net=net, n_filter=64, filter_size=(3, 3), strides=(1, 1), act=tf.nn.relu,
-                         padding='SAME', W_init=w_init, name='n64s1/c')
-            temp = net
-            for i in range(16):  # residual blocks
-                net_ = Conv2d(net=net, n_filter=64, filter_size=(3, 3), strides=(1, 1), act=None,
-                              padding='SAME', W_init=w_init, b_init=b_init, name='n64s1/c1/%s' % i)
-                net_ = BatchNormLayer(layer=net_, act=tf.nn.relu, is_train=is_train,
-                                      gamma_init=g_init, name='n64s1/b1/%s' % i)
-                net_ = Conv2d(net=net_, n_filter=64, filter_size=(3, 3), strides=(1, 1), act=None,
-                              padding='SAME', W_init=w_init, b_init=b_init, name='n64s1/c2/%s' % i)
-                net_ = BatchNormLayer(layer=net_, is_train=is_train,
-                                      gamma_init=g_init, name='n64s1/b2/%s' % i)
-                net_ = ElementwiseLayer(layer=[net, net_], combine_fn=tf.add, name='b_residual_add/%s' % i)
-                net = net_
-            net = Conv2d(net=net, n_filter=64, filter_size=(3, 3), strides=(1, 1), act=None,
-                         padding='SAME', W_init=w_init, b_init=b_init, name='n64s1/c/m')
-            net = BatchNormLayer(layer=net, is_train=is_train, gamma_init=g_init, name='n64s1/b/m')
-            content_feature = ElementwiseLayer(layer=[net, temp], combine_fn=tf.add, name='add3')
-
-            # upscaling (4x) for texture extractor
-            net = Conv2d(net=content_feature, n_filter=256, filter_size=(3, 3), strides=(1, 1), act=None,
-                         padding='SAME', W_init=w_init, name='n256s1/1')
-            net = SubpixelConv2d(net=net, scale=2, n_out_channel=None, act=tf.nn.relu, name='pixelshufflerx2/1')
-            net = Conv2d(net=net, n_filter=256, filter_size=(3, 3), strides=(1, 1), act=None,
-                         padding='SAME', W_init=w_init, name='n256s1/2')
-            net = SubpixelConv2d(net=net, scale=2, n_out_channel=None, act=tf.nn.relu, name='pixelshufflerx2/2')
-
-            # output value range is [-1, 1]
-            net_upscale = Conv2d(net=net, n_filter=3, filter_size=(1, 1), strides=(1, 1), act=tf.nn.tanh,
-                                 padding='SAME', W_init=w_init, name='out')
-            if maps is None:
-                return net_upscale, None
+        # with tf.variable_scope("content_extractor", reuse=reuse):
+        #     layers.set_name_reuse(reuse)
+        #     net = InputLayer(inputs=inputs, name='input')
+        #     net = Conv2d(net=net, n_filter=64, filter_size=(3, 3), strides=(1, 1), act=tf.nn.relu,
+        #                  padding='SAME', W_init=w_init, name='n64s1/c')
+        #     temp = net
+        #     for i in range(16):  # residual blocks
+        #         net_ = Conv2d(net=net, n_filter=64, filter_size=(3, 3), strides=(1, 1), act=None,
+        #                       padding='SAME', W_init=w_init, b_init=b_init, name='n64s1/c1/%s' % i)
+        #         net_ = BatchNormLayer(layer=net_, act=tf.nn.relu, is_train=is_train,
+        #                               gamma_init=g_init, name='n64s1/b1/%s' % i)
+        #         net_ = Conv2d(net=net_, n_filter=64, filter_size=(3, 3), strides=(1, 1), act=None,
+        #                       padding='SAME', W_init=w_init, b_init=b_init, name='n64s1/c2/%s' % i)
+        #         net_ = BatchNormLayer(layer=net_, is_train=is_train,
+        #                               gamma_init=g_init, name='n64s1/b2/%s' % i)
+        #         net_ = ElementwiseLayer(layer=[net, net_], combine_fn=tf.add, name='b_residual_add/%s' % i)
+        #         net = net_
+        #     net = Conv2d(net=net, n_filter=64, filter_size=(3, 3), strides=(1, 1), act=None,
+        #                  padding='SAME', W_init=w_init, b_init=b_init, name='n64s1/c/m')
+        #     net = BatchNormLayer(layer=net, is_train=is_train, gamma_init=g_init, name='n64s1/b/m')
+        #     content_feature = ElementwiseLayer(layer=[net, temp], combine_fn=tf.add, name='add3')
+        #
+        #     # upscaling (4x) for texture extractor
+        #     net = Conv2d(net=content_feature, n_filter=256, filter_size=(3, 3), strides=(1, 1), act=None,
+        #                  padding='SAME', W_init=w_init, name='n256s1/1')
+        #     net = SubpixelConv2d(net=net, scale=2, n_out_channel=None, act=tf.nn.relu, name='pixelshufflerx2/1')
+        #     net = Conv2d(net=net, n_filter=256, filter_size=(3, 3), strides=(1, 1), act=None,
+        #                  padding='SAME', W_init=w_init, name='n256s1/2')
+        #     net = SubpixelConv2d(net=net, scale=2, n_out_channel=None, act=tf.nn.relu, name='pixelshufflerx2/2')
+        #
+        #     # output value range is [-1, 1]
+        #     net_upscale = Conv2d(net=net, n_filter=3, filter_size=(1, 1), strides=(1, 1), act=tf.nn.tanh,
+        #                          padding='SAME', W_init=w_init, name='out')
+        if maps is None:
+            print('Swaped map must be provided!')
+            exit(0)
 
         # ********************************************************************************
         # *** conditional texture transfer
@@ -138,42 +139,42 @@ class SRNTT(object):
 
             #                                     $
 
-            # map_in = InputLayer(inputs=content_feature.outputs, name='content_feature_maps')
-            # if weights is not None and concat:
-            #     self.a1 = tf.get_variable(dtype=tf.float32, name='small/a', initializer=1.)
-            #     self.b1 = tf.get_variable(dtype=tf.float32, name='small/b', initializer=0.)
-            #     map_ref = maps[0] * tf.nn.sigmoid(self.a1 * weights + self.b1)
-            # else:
-            #     map_ref = maps[0]
-            # map_ref = InputLayer(inputs=map_ref, name='reference_feature_maps1')
-            # net = ConcatLayer(layer=[map_in, map_ref], concat_dim=-1, name='concatenation1')
-            # net = Conv2d(net=net, n_filter=64, filter_size=(3, 3), strides=(1, 1), act=tf.nn.relu,
-            #              padding='SAME', W_init=w_init, name='small/conv1')
-            # for i in range(self.num_res_blocks):  # residual blocks
-            #     net_ = Conv2d(net=net, n_filter=64, filter_size=(3, 3), strides=(1, 1), act=None,
-            #                   padding='SAME', W_init=w_init, b_init=b_init, name='small/resblock_%d/conv1' % i)
-            #     net_ = BatchNormLayer(layer=net_, act=tf.nn.relu, is_train=is_train,
-            #                           gamma_init=g_init, name='small/resblock_%d/bn1' % i)
-            #     net_ = Conv2d(net=net_, n_filter=64, filter_size=(3, 3), strides=(1, 1), act=None,
-            #                   padding='SAME', W_init=w_init, b_init=b_init, name='small/resblock_%d/conv2' % i)
-            #     net_ = BatchNormLayer(layer=net_, is_train=is_train,
-            #                           gamma_init=g_init, name='small/resblock_%d/bn2' % i)
-            #     net_ = ElementwiseLayer(layer=[net, net_], combine_fn=tf.add, name='small/resblock_%d/add' % i)
-            #     net = net_
-            # net = Conv2d(net=net, n_filter=64, filter_size=(3, 3), strides=(1, 1), act=None,
-            #              padding='SAME', W_init=w_init, b_init=b_init, name='small/conv2')
-            # net = BatchNormLayer(layer=net, is_train=is_train, gamma_init=g_init, name='small/bn2')
-            # net = ElementwiseLayer(layer=[net, map_in], combine_fn=tf.add, name='small/add2')
-            # # upscaling (2x)
-            # net = Conv2d(net=net, n_filter=256, filter_size=(3, 3), strides=(1, 1), act=None,
-            #              padding='SAME', W_init=w_init, name='small/conv3')
-            # net = SubpixelConv2d(net=net, scale=2, n_out_channel=None, act=tf.nn.relu, name='small/subpixel')
+            map_in = InputLayer(inputs=inputs, name='content_feature_maps')
+            if weights is not None and concat:
+                self.a1 = tf.get_variable(dtype=tf.float32, name='small/a', initializer=1.)
+                self.b1 = tf.get_variable(dtype=tf.float32, name='small/b', initializer=0.)
+                map_ref = maps[0] * tf.nn.sigmoid(self.a1 * weights + self.b1)
+            else:
+                map_ref = maps[0]
+            map_ref = InputLayer(inputs=map_ref, name='reference_feature_maps1')
+            net = ConcatLayer(layer=[map_in, map_ref], concat_dim=-1, name='concatenation1')
+            net = Conv2d(net=net, n_filter=128, filter_size=(3, 3), strides=(1, 1), act=tf.nn.relu,  # --changed to 128
+                         padding='SAME', W_init=w_init, name='small/conv1')
+            for i in range(self.num_res_blocks):  # residual blocks
+                net_ = Conv2d(net=net, n_filter=64, filter_size=(3, 3), strides=(1, 1), act=None,
+                              padding='SAME', W_init=w_init, b_init=b_init, name='small/resblock_%d/conv1' % i)
+                net_ = BatchNormLayer(layer=net_, act=tf.nn.relu, is_train=is_train,
+                                      gamma_init=g_init, name='small/resblock_%d/bn1' % i)
+                net_ = Conv2d(net=net_, n_filter=64, filter_size=(3, 3), strides=(1, 1), act=None,
+                              padding='SAME', W_init=w_init, b_init=b_init, name='small/resblock_%d/conv2' % i)
+                net_ = BatchNormLayer(layer=net_, is_train=is_train,
+                                      gamma_init=g_init, name='small/resblock_%d/bn2' % i)
+                net_ = ElementwiseLayer(layer=[net, net_], combine_fn=tf.add, name='small/resblock_%d/add' % i)
+                net = net_
+            net = Conv2d(net=net, n_filter=64, filter_size=(3, 3), strides=(1, 1), act=None,
+                         padding='SAME', W_init=w_init, b_init=b_init, name='small/conv2')
+            net = BatchNormLayer(layer=net, is_train=is_train, gamma_init=g_init, name='small/bn2')
+            net = ElementwiseLayer(layer=[net, map_in], combine_fn=tf.add, name='small/add2')
+            # upscaling (2x)
+            net = Conv2d(net=net, n_filter=256, filter_size=(3, 3), strides=(1, 1), act=None,
+                         padding='SAME', W_init=w_init, name='small/conv3')
+            net = SubpixelConv2d(net=net, scale=2, n_out_channel=None, act=tf.nn.relu, name='small/subpixel')
 
-            #                                           $
+            # $
 
             # fusion content and texture maps at the medium scale
             # print('\tfusion content and texture maps at MEDIUM scale')
-            map_in = InputLayer(inputs=content_feature.outputs, name='content_feature_maps')
+            map_in = net
             if weights is not None and concat:
                 self.a2 = tf.get_variable(dtype=tf.float32, name='medium/a', initializer=1.)
                 self.b2 = tf.get_variable(dtype=tf.float32, name='medium/b', initializer=0.)
@@ -182,7 +183,7 @@ class SRNTT(object):
             else:
                 map_ref = maps[1]
             map_ref = InputLayer(inputs=map_ref, name='reference_feature_maps2')  # --params is cleared
-            net = ConcatLayer(layer=[map_in, map_ref], concat_dim=-1, name='concatenation2')
+            net = ConcatLayer(layer=[map_in, map_ref], concat_dim=-1, name='concatenation2')  # $ scheme1
             net = Conv2d(net=net, n_filter=64, filter_size=(3, 3), strides=(1, 1), act=tf.nn.relu,
                          padding='SAME', W_init=w_init, name='medium/conv1')
             for i in range(int(self.num_res_blocks / 2)):  # residual blocks
@@ -242,7 +243,7 @@ class SRNTT(object):
             net_srntt = Conv2d(net=net, n_filter=3, filter_size=(1, 1), strides=(1, 1), act=tf.nn.tanh,
                                padding='SAME', W_init=w_init, name='out')
 
-            return net_upscale, net_srntt
+            return net_srntt
 
     def discriminator(self, input_image, is_train=True, reuse=False):
         w_init = tf.random_normal_initializer(stddev=0.02)
@@ -366,11 +367,17 @@ class SRNTT(object):
         # ********************************************************************************
         logging.info('Building graph ...')
         # input LR images, range [-1, 1]
-        self.input = tf.placeholder(dtype=tf.float32, shape=[batch_size, input_size, input_size, 3])
+        self.input = tf.placeholder(dtype=tf.float32, shape=[batch_size, input_size, input_size, 3],name='placeholder_input')
         # self.input = tf.placeholder(dtype=tf.float32, shape=[batch_size, None, None, 3])
         # original images, range [-1, 1]
         self.ground_truth = tf.placeholder(dtype=tf.float32,
                                            shape=[batch_size, input_size * scale, input_size * scale, 3])
+
+        # SU placeholder, feed range in [-1,1]
+        self.SU = tf.placeholder(dtype=tf.float32, shape=[batch_size, input_size * scale, input_size * scale, 3])
+
+        # reference images, ranges[-1, 1]
+        self.ref = tf.placeholder(dtype=tf.float32, shape=[batch_size, None, None, 3])  # --$
 
         # texture feature maps, range [0, ?]
         # self.maps = tuple([tf.placeholder(dtype=tf.float32, shape=[batch_size, m.shape[0], m.shape[1], m.shape[2]])
@@ -384,22 +391,22 @@ class SRNTT(object):
         # weight maps
         self.weights = tf.placeholder(dtype=tf.float32, shape=[batch_size, input_size, input_size])
 
-        # reference images, ranges[-1, 1]
-        self.ref = tf.placeholder(dtype=tf.float32, shape=[batch_size, None, None, 3])  # --$
+        # --VGGs
+        self.net_vgg_SU = VGG19((self.SU + 1) * 127.5, model_path=self.vgg19_model_path)
+        if self.hot_start:
+            self.net_vgg_ref = VGG19(self.ref, model_path=self.vgg19_model_path)  # --input range 0~255
+        # --vgg_ref used for ref. in dual problem, ref is always same size as input
 
         # SRNTT network
         if use_weight_map:
-            self.net_upscale, self.net_srntt = self.model(self.input, self.maps,
-                                                          weights=tf.expand_dims(self.weights, axis=-1))
+            self.net_srntt = self.model(self.net_vgg_SU, self.maps, weights=tf.expand_dims(self.weights, axis=-1))
         else:
-            self.net_upscale, self.net_srntt = self.model(self.input, self.maps)
+            self.net_srntt = self.model(self.net_vgg_SU, self.maps)
 
         # VGG19 network, input range [0, 255]
-        self.net_vgg_sr = VGG19((self.net_srntt.outputs + 1) * 127.5, model_path=self.vgg19_model_path)
         self.net_vgg_hr = VGG19((self.ground_truth + 1) * 127.5, model_path=self.vgg19_model_path)
-        if self.hot_start:
-            self.net_vgg_ref = VGG19(self.ref, model_path=self.vgg19_model_path)  # --input range 0~255
-        # --vgg_hr used for gt and SU, vgg_ref used for ref. in dual problem, ref is always same size as input
+        self.net_vgg_sr = VGG19((self.net_srntt.outputs + 1) * 127.5, model_path=self.vgg19_model_path)
+
 
         # discriminator network
         self.net_d, d_real_logits = self.discriminator(self.ground_truth)
@@ -514,7 +521,6 @@ class SRNTT(object):
         trainable_vars = tf.trainable_variables()
         var_g = [v for v in trainable_vars if 'texture_transfer' in v.name]
         var_d = [v for v in trainable_vars if 'discriminator' in v.name]
-        var_e = [v for v in trainable_vars if 'content_extractor' in v.name]
 
         # learning rate decay
         global_step = tf.Variable(0, trainable=False, name='global_step')
@@ -529,12 +535,9 @@ class SRNTT(object):
 
         # optimizer
         optimizer_init = tf.train.AdamOptimizer(
-            learning_rate=learning_rate, beta1=beta1).minimize(loss_init,
-                                                               var_list=var_g + var_e if self.args.train_CE else var_g)
+            learning_rate=learning_rate, beta1=beta1).minimize(loss_init, var_list=var_g)
         optimizer = tf.train.AdamOptimizer(
-            learning_rate=decayed_learning_rate, beta1=beta1).minimize(loss,
-                                                                       var_list=var_g + var_e if self.args.train_CE else var_g,
-                                                                       global_step=global_step)
+            learning_rate=decayed_learning_rate, beta1=beta1).minimize(loss, var_list=var_g, global_step=global_step)
         optimizer_d = tf.train.AdamOptimizer(
             learning_rate=decayed_learning_rate, beta1=beta1).minimize(loss_d, var_list=var_d, global_step=global_step)
 
@@ -582,50 +585,13 @@ class SRNTT(object):
 
             tf.global_variables_initializer().run()
 
-            # # load pre-trained upscaling.
-            # if self.args.init_CE_with_pretrain:
-            #     model_path = join(self.srntt_model_path, SRNTT_MODEL_NAMES['content_extractor'])
-            #     if files.load_and_assign_npz(
-            #             sess=sess,
-            #             name=model_path,
-            #             network=self.net_upscale) is False:
-            #         logging.error('FAILED load %s' % model_path)
-            #         exit(0)
-            # else:
-            #     print('Use random inited CE params!')
-
-            # vis.save_images(
-            #     np.round((self.net_upscale.outputs.eval({self.input: samples_input}) + 1) * 127.5).astype(np.uint8),
-            #     [frame_size, frame_size], join(self.save_dir, SAMPLE_FOLDER, 'Upscale.png'))
-
-            # load the specific texture transfer model, specified by save_dir
-            # load CE:
-            if self.args.load_pre_CE:
-                model_path = join(self.save_dir, MODEL_FOLDER, '%d_' % (step,) + SRNTT_MODEL_NAMES['content_extractor'])
-                if files.load_and_assign_npz(sess=sess, name=model_path, network=self.net_upscale):
-                    # num_init_epochs = 0
-                    is_load_success = True
-                    logging.info('SUCCESS load %s' % model_path)
-                else:
-                    print('Loading your model CE failed, loading his model:')
-                    model_path = join(self.srntt_model_path, MODEL_FOLDER, SRNTT_MODEL_NAMES['content_extractor'])
-                    if files.load_and_assign_npz(sess=sess, name=model_path, network=self.net_upscale):
-                        # num_init_epochs = 0
-                        is_load_success = True
-                        logging.info('SUCCESS load %s' % model_path)
-                    else:
-                        print('Failed to load CE!')
-                        exit(0)
-            else:
-                print('Init CE params with random')
-
             if self.args.load_pre_srntt:
                 model_path = join(self.save_dir, MODEL_FOLDER,
                                   '%d_' % (step,) + SRNTT_MODEL_NAMES['conditional_texture_transfer'])
                 if files.load_and_assign_npz(sess=sess, name=model_path, network=self.net_srntt):
                     num_init_epochs -= (step + 1)
                     if num_init_epochs < 0: num_init_epochs = 0
-                    is_load_success = True
+                    # is_load_success = True
                     logging.info('SUCCESS load %s' % model_path)
 
                     model_path = join(self.save_dir, MODEL_FOLDER, '%d_' % (step,) + SRNTT_MODEL_NAMES['discriminator'])
@@ -638,6 +604,7 @@ class SRNTT(object):
                         logging.warning('FAILED load %s' % model_path)
                 else:
                     print('Loading your model snrtt failed, loading his model:')
+                    step = -1
                     if use_init_model_only:
                         model_path = join(self.srntt_model_path, MODEL_FOLDER, SRNTT_MODEL_NAMES['init'])
                     else:
@@ -652,7 +619,7 @@ class SRNTT(object):
                         exit(0)
             else:
                 print('Init srntt params with random')
-                if not self.args.load_pre_CE: step = -1
+                step = -1
 
             # is_load_success = False
             # if use_init_model_only:
@@ -746,7 +713,7 @@ class SRNTT(object):
                         # batch_maps_tmp = [np.load(files_refs_map[i])['target_map'] for i in sub_idx]  # Mt from file
                     # --$
                     else:
-                        map_sr = self.net_vgg_hr.layers['relu3_1'].eval({self.ground_truth: batch_SU})
+                        map_sr = self.net_vgg_hr.layers['relu3_1'].eval({self.SU: batch_SU})  # should be changed?
                         styles = sess.run([self.net_vgg_ref.layers['relu3_1'],
                                            self.net_vgg_ref.layers['relu2_1'],
                                            self.net_vgg_ref.layers['relu1_1'],
@@ -784,17 +751,20 @@ class SRNTT(object):
                                  self.net_vgg_hr.layers['relu1_1']],
                         feed_dict={
                             self.input: batch_input,
+                            self.SU: batch_SU,  # --$
                             self.maps: batch_maps,
                             self.ground_truth: batch_truth,
                             self.weights: batch_weights
                         }
                     )
 
-                    # train with truth  -- train srntt not using swaped Mt, but the gt Mt
+                    # train with truth
+                    # -- train srntt not using swaped Mt, but the gt Mt(similar to training decoder of VGG
                     _, l_reconst, l_bp = sess.run(
                         fetches=[optimizer_init, loss_reconst, loss_bp],
                         feed_dict={
                             self.input: batch_input,
+                            self.SU: batch_SU,  # --$
                             self.maps: [map_hr_3, map_hr_2, map_hr_1],
                             self.ground_truth: batch_truth,
                             self.weights: np.ones_like(np.array(batch_weights))
@@ -805,6 +775,7 @@ class SRNTT(object):
                         merged_np = sess.run(fetches=merged,
                                              feed_dict={
                                                  self.input: batch_input,
+                                                 self.SU: batch_SU,  # --$
                                                  self.maps: batch_maps,
                                                  self.ground_truth: batch_truth,
                                                  self.weights: np.ones_like(np.array(batch_weights))
@@ -837,11 +808,6 @@ class SRNTT(object):
                               str(step) + '_' + SRNTT_MODEL_NAMES['conditional_texture_transfer']),
                     sess=sess)
 
-                files.save_npz(
-                    save_list=self.net_upscale.all_params,
-                    name=join(self.save_dir, MODEL_FOLDER, str(step) + '_' + SRNTT_MODEL_NAMES['content_extractor']),
-                    sess=sess)
-
             # train with all losses
             current_eta = None
             for epoch in xrange(num_epochs - num_init_epochs):
@@ -863,7 +829,7 @@ class SRNTT(object):
                         batch_maps_tmp = [np.load(files_map[i])['target_map'] for i in sub_idx]  # Mt from file
                     # --$
                     else:
-                        map_sr = self.net_vgg_hr.layers['relu3_1'].eval({self.ground_truth: batch_SU})
+                        map_sr = self.net_vgg_hr.layers['relu3_1'].eval({self.SU: batch_SU})
                         styles = sess.run([self.net_vgg_ref.layers['relu3_1'],
                                            self.net_vgg_ref.layers['relu2_1'],
                                            self.net_vgg_ref.layers['relu1_1'],
@@ -900,7 +866,8 @@ class SRNTT(object):
                             _ = sess.run(
                                 fetches=[optimizer_d],
                                 feed_dict={
-                                    self.input: batch_input,
+                                    # self.input: batch_input,
+                                    self.SU: batch_SU,  # --$
                                     self.maps: batch_maps,
                                     self.ground_truth: batch_truth,
                                     self.weights: batch_weights
@@ -920,6 +887,7 @@ class SRNTT(object):
                         ],
                         feed_dict={
                             self.input: batch_input,
+                            self.SU: batch_SU,  # --$
                             self.maps: batch_maps,
                             self.ground_truth: batch_truth,
                             self.weights: batch_weights
@@ -933,6 +901,7 @@ class SRNTT(object):
                         fetches=fs,
                         feed_dict={
                             self.input: batch_input,
+                            self.SU: batch_SU,  # --$
                             self.maps: [map_hr_3, map_hr_2, map_hr_1],
                             self.ground_truth: batch_truth,
                             self.weights: np.ones_like(np.array(batch_weights))
@@ -944,11 +913,11 @@ class SRNTT(object):
                         merged_np = sess.run(fetches=merged,
                                              feed_dict={
                                                  self.input: batch_input,
+                                                 self.SU: batch_SU,  # --$
                                                  self.maps: batch_maps,
                                                  self.ground_truth: batch_truth,
                                                  self.weights: np.ones_like(np.array(batch_weights))
                                              })
-                        # print('merged_np',merged_np)
                         writer.add_summary(merged_np, (epoch + num_init_epochs) * num_batches + n_batch)
                     # --tensorboard
                     # merged = tf.summary.merge_all()
@@ -981,10 +950,6 @@ class SRNTT(object):
                     save_list=self.net_srntt.all_params,
                     name=join(self.save_dir, MODEL_FOLDER,
                               str(step) + '_' + SRNTT_MODEL_NAMES['conditional_texture_transfer']),
-                    sess=sess)
-                files.save_npz(
-                    save_list=self.net_upscale.all_params,
-                    name=join(self.save_dir, MODEL_FOLDER, str(step) + '_' + SRNTT_MODEL_NAMES['content_extractor']),
                     sess=sess)
                 files.save_npz(
                     save_list=self.net_d.all_params,
@@ -1134,7 +1099,7 @@ class SRNTT(object):
             self.is_model_built = True
             logging.info('Building graph ...')
             # input image, range [-1, 1]
-            self.input_srntt = tf.placeholder(shape=[1, None, None, 3], dtype=tf.float32)
+            # self.input_srntt = tf.placeholder(shape=[1, None, None, 3], dtype=tf.float32)
 
             # reference images, range [0, 255]
             self.input_vgg19 = tf.placeholder(shape=[1, None, None, 3], dtype=tf.float32)
@@ -1156,14 +1121,6 @@ class SRNTT(object):
                 dtype=tf.float32,
                 shape=(1, None, None))
 
-            # SRNTT network
-            logging.info('Build SRNTT model')
-            if use_weight_map:
-                self.net_upscale, self.net_srntt = self.model(
-                    self.input_srntt, self.maps, weights=tf.expand_dims(self.weights, axis=-1), is_train=False)
-            else:
-                self.net_upscale, self.net_srntt = self.model(self.input_srntt, self.maps, is_train=False)
-
             # VGG19 network, input range [0, 255]
             logging.info('Build VGG19 model')
             self.net_vgg19 = VGG19(
@@ -1171,6 +1128,14 @@ class SRNTT(object):
                 model_path=self.vgg19_model_path,
                 final_layer='relu3_1'
             )
+
+            # SRNTT network
+            logging.info('Build SRNTT model')
+            if use_weight_map:
+                self.net_srntt = self.model(self.net_vgg19, self.maps, weights=tf.expand_dims(self.weights, axis=-1),
+                                            is_train=False)
+            else:
+                self.net_srntt = self.model(self.net_vgg19, self.maps, is_train=False)  # --$
 
             # ********************************************************************************
             # *** load models
@@ -1188,13 +1153,13 @@ class SRNTT(object):
             self.sess.run(tf.global_variables_initializer())
 
             # load pre-trained content extractor, including upscaling.
-            model_path = join(self.srntt_model_path, SRNTT_MODEL_NAMES['content_extractor'])
-            if files.load_and_assign_npz(
-                    sess=self.sess,
-                    name=model_path,
-                    network=self.net_upscale) is False:
-                logging.error('FAILED load %s' % model_path)
-                exit(0)
+            # model_path = join(self.srntt_model_path, SRNTT_MODEL_NAMES['content_extractor'])
+            # if files.load_and_assign_npz(
+            #         sess=self.sess,
+            #         name=model_path,
+            #         network=self.net_upscale) is False:
+            #     logging.error('FAILED load %s' % model_path)
+            #     exit(0)
 
             # load the specific conditional texture transfer model, specified by save_dir
             if self.save_dir is None:
@@ -1287,10 +1252,10 @@ class SRNTT(object):
             #    continue
 
             logging.info('\tGetting feature map of input LR image ...')
-            img_input_upscale = imresize(patch, scale, interp='bicubic')  # --4 x input $
+            img_input_upscale = imresize(patch, scale, interp='bicubic')  # --4 x input $  -- it's SU
             print('img_input_upscale.shape', img_input_upscale.shape)
             map_sr = self.net_vgg19.get_layer_output(
-                sess=self.sess, layer_name=matching_layer[0], feed_image=img_input_upscale)  # --only relu3_1?
+                sess=self.sess, layer_name=matching_layer[0], feed_image=img_input_upscale)  # --only relu3_1? --yes
 
             logging.info('\tMatching and swapping features ...')
             map_target, weight, _ = self.swaper.conditional_swap_multi_layer(
@@ -1304,20 +1269,20 @@ class SRNTT(object):
             logging.info('Obtain SR patches')
             if use_weight_map:
                 weight = np.pad(weight, ((1, 1), (1, 1)), 'edge')
-                out_srntt, out_upscale = self.sess.run(
-                    fetches=[self.net_srntt.outputs, self.net_upscale.outputs],
+                out_srntt = self.sess.run(
+                    fetches=[self.net_srntt.outputs],
                     feed_dict={
-                        self.input_srntt: [patch / 127.5 - 1],
+                        self.input_vgg19: patch,
                         self.maps: [np.expand_dims(m, axis=0) for m in map_target],
                         self.weights: [weight]
                     }
                 )
             else:
                 time_step_1 = time.time()
-                out_srntt, out_upscale = self.sess.run(
-                    fetches=[self.net_srntt.outputs, self.net_upscale.outputs],
+                out_srntt = self.sess.run(
+                    fetches=[self.net_srntt.outputs],
                     feed_dict={
-                        self.input_srntt: [patch / 127.5 - 1],
+                        self.input_vgg19: patch,  # --$
                         self.maps: [np.expand_dims(m, axis=0) for m in map_target],
                     }
                 )
@@ -1328,29 +1293,25 @@ class SRNTT(object):
 
             imsave(join(result_dir, 'tmp', 'srntt_%05d.png' % idx),
                    np.round((out_srntt.squeeze() + 1) * 127.5).astype(np.uint8))
-            imsave(join(result_dir, 'tmp', 'upscale_%05d.png' % idx),
-                   np.round((out_upscale.squeeze() + 1) * 127.5).astype(np.uint8))
+            # imsave(join(result_dir, 'tmp', 'upscale_%05d.png' % idx),
+            #        np.round((out_upscale.squeeze() + 1) * 127.5).astype(np.uint8))
             logging.info('Saved to %s' % join(result_dir, 'tmp', 'srntt_%05d.png' % idx))
         t_end = time.time()
         logging.info('Reconstruct SR image')
         out_srntt_files = sorted(glob(join(result_dir, 'tmp', 'srntt_*.png')))
-        out_upscale_files = sorted(glob(join(result_dir, 'tmp', 'upscale_*.png')))
+        # out_upscale_files = sorted(glob(join(result_dir, 'tmp', 'upscale_*.png')))
 
         if grids is not None:
             f = 4 // int(scale)
             print(type(f))
             patch_size = grids[0, 2]
             h_l, w_l = grids[-1, 0] + patch_size, grids[-1, 1] + patch_size
-            out_upscale_large = np.zeros((int(h_l * f), int(w_l * f), 3), dtype=np.float32)
+            # out_upscale_large = np.zeros((int(h_l * f), int(w_l * f), 3), dtype=np.float32)
             # out_srntt_large = np.copy(out_upscale_large)
             out_srntt_large = np.zeros((h_l, w_l, 3), dtype=np.float32)
-            counter_scale = np.zeros_like(out_upscale_large, dtype=np.float32)
+            # counter_scale = np.zeros_like(out_upscale_large, dtype=np.float32)
             counter = np.zeros_like(out_srntt_large, dtype=np.float32)
             for idx in xrange(len(grids)):
-                out_upscale_large[
-                grids[idx, 0]:grids[idx, 0] + patch_size * f,
-                grids[idx, 1]:grids[idx, 1] + patch_size * f, :] += imread(out_upscale_files[idx], mode='RGB').astype(
-                    np.float32)
 
                 out_srntt_large[
                 grids[idx, 0]:grids[idx, 0] + patch_size,
@@ -1361,16 +1322,12 @@ class SRNTT(object):
                 grids[idx, 0]:grids[idx, 0] + patch_size,
                 grids[idx, 1]:grids[idx, 1] + patch_size, :] += 1
 
-                counter_scale[
-                grids[idx, 0]:grids[idx, 0] + patch_size * f,
-                grids[idx, 1]:grids[idx, 1] + patch_size * f, :] += 1
-
-            out_upscale_large /= counter_scale
+            # out_upscale_large /= counter_scale
             out_srntt_large /= counter
-            out_upscale = out_upscale_large[:h * int(scale), :w * int(scale), :]
+            # out_upscale = out_upscale_large[:h * int(scale), :w * int(scale), :]
             out_srntt = out_srntt_large[:h * int(scale), :w * int(scale), :]
         else:
-            out_upscale = imread(out_upscale_files[0], mode='RGB')
+            # out_upscale = imread(out_upscale_files[0], mode='RGB')
             out_srntt = imread(out_srntt_files[0], mode='RGB')
 
         # log run time
@@ -1398,8 +1355,8 @@ class SRNTT(object):
         bf = scale
         imsave(join(result_dir, 'Bicubic_' + savename), imresize(img_input_copy, bf, interp='bicubic'))
         # save SR images
-        imsave(join(result_dir, 'Upscale_' + savename),
-               np.array(out_upscale).squeeze().round().clip(0, 255).astype(np.uint8))
+        # imsave(join(result_dir, 'Upscale_' + savename),
+        #        np.array(out_upscale).squeeze().round().clip(0, 255).astype(np.uint8))
         imsave(join(result_dir, 'SRNTT' + savename),
                np.array(out_srntt).squeeze().round().clip(0, 255).astype(np.uint8))
         # if x2:
