@@ -5,7 +5,7 @@ echo
 
 #training_set=${1-CUFED}
 #training_set=${1-dual}
-training_set=${1-dual_hw}
+training_set=${1-dual_hw_real}
 
 # # download training set
 #  python download_dataset.py --dataset_name ${training_set}
@@ -109,19 +109,21 @@ training_set=${1-dual_hw}
 ##    --patch_size 10 \
 ##    --stride 2
 
-# train from hw dataset
+# train from hw dataset (real)
 python main.py \
     --is_train True \
-    --input_dir data/train/dual_hw/input \
-    --ref_dir data/train/dual_hw/ref \
-    --map_dir data/train/dual_hw/map_321_2x \
-    --load_pre_CE False \
+    --train_real_SU True \
+    --input_dir data/train/dual_hw_real/SU \
+    --ref_dir data/train/dual_hw_real/ref \
+    --map_dir data/train/dual_hw_real/map_321_2x \
+    --gt_dir data/train/dual_hw_real/gt \
+    --load_pre_CE True \
     --load_pre_srntt False \
     --num_init_epochs 2 \
-    --num_epochs 35 \
-    --save_dir modelWithCE_hw_init \
+    --num_epochs 30 \
+    --save_dir my_models/modelWithCE_hwReal_init_preCE \
     --x2_train \
     --patch_size 3 \
     --stride 1 \
-    --cuda 3
+    --cuda 0
 

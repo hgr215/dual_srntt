@@ -327,7 +327,8 @@ class SRNTT(object):
             use_lower_layers_in_per_loss=False,
             step=None
     ):
-
+        is_real_data = self.args.train_real_SU
+        print('Train real SU: %s' % (bool(is_real_data)))
         scale = self.scale
         input_f_size = [1, input_size * scale // 4, input_size * scale // 4, 256]  # --4 for vgg19 relu3_1
         load_patch = False  # If true, load patches from map_321..., else, gene new one
@@ -349,11 +350,13 @@ class SRNTT(object):
                 makedirs(join(self.save_dir, folder))
 
         # check input dir
-        files_input = sorted(glob(join(input_dir, '*.png')))
+
+        files_input = sorted(glob(join(input_dir, '*.png')))  # gt ims for sti data, and SU for real data.
         files_map = sorted(glob(join(map_dir, '*.npz')))  # --sort so that the map and input is matched.
         files_ref = sorted(glob(join(ref_dir, '*.png')))
+        if is_real_data:
+            files_gt = sorted(glob(join(self.args.gt_dir, '*.png')))
         num_files = len(files_input)
-
         if not self.hot_start:
             assert num_files == len(files_ref) == len(files_map)
         else:
@@ -366,11 +369,17 @@ class SRNTT(object):
         # ********************************************************************************
         logging.info('Building graph ...')
         # input LR images, range [-1, 1]
-        self.input = tf.placeholder(dtype=tf.float32, shape=[batch_size, input_size, input_size, 3])
+        self.input = tf.placeholder(dtype=tf.float32, shape=[batch_size, input_size, input_size, 3])  # --used for srntt
         # self.input = tf.placeholder(dtype=tf.float32, shape=[batch_size, None, None, 3])
         # original images, range [-1, 1]
         self.ground_truth = tf.placeholder(dtype=tf.float32,
                                            shape=[batch_size, input_size * scale, input_size * scale, 3])
+
+        self.SU = tf.placeholder(dtype=tf.float32,  # --used for VGG for swap [-1,1]
+                                 shape=[batch_size, input_size * scale, input_size * scale, 3])
+
+        # reference images, ranges[-1, 1]
+        self.ref = tf.placeholder(dtype=tf.float32, shape=[batch_size, None, None, 3])  # --$
 
         # texture feature maps, range [0, ?]
         # self.maps = tuple([tf.placeholder(dtype=tf.float32, shape=[batch_size, m.shape[0], m.shape[1], m.shape[2]])
@@ -384,9 +393,6 @@ class SRNTT(object):
         # weight maps
         self.weights = tf.placeholder(dtype=tf.float32, shape=[batch_size, input_size, input_size])
 
-        # reference images, ranges[-1, 1]
-        self.ref = tf.placeholder(dtype=tf.float32, shape=[batch_size, None, None, 3])  # --$
-
         # SRNTT network
         if use_weight_map:
             self.net_upscale, self.net_srntt = self.model(self.input, self.maps,
@@ -397,6 +403,8 @@ class SRNTT(object):
         # VGG19 network, input range [0, 255]
         self.net_vgg_sr = VGG19((self.net_srntt.outputs + 1) * 127.5, model_path=self.vgg19_model_path)
         self.net_vgg_hr = VGG19((self.ground_truth + 1) * 127.5, model_path=self.vgg19_model_path)
+        self.net_vgg_su = VGG19((self.SU + 1) * 127.5, model_path=self.vgg19_model_path)
+
         if self.hot_start:
             self.net_vgg_ref = VGG19(self.ref, model_path=self.vgg19_model_path)  # --input range 0~255
         # --vgg_hr used for gt and SU, vgg_ref used for ref. in dual problem, ref is always same size as input
@@ -734,10 +742,15 @@ class SRNTT(object):
                     step_time = time.time()
                     sub_idx = idx[n_batch * batch_size:n_batch * batch_size + batch_size]
                     batch_imgs = [imread(files_input[i], mode='RGB') for i in sub_idx]
-                    batch_truth = [img.astype(np.float32) / 127.5 - 1 for img in batch_imgs]
                     batch_input = [imresize(img, 1 / scale, interp='bicubic').astype(np.float32) / 127.5 - 1 for img in
-                                   batch_imgs]
-                    batch_SU = [imresize(img, scale, interp='bicubic') for img in batch_input]
+                                   batch_imgs]  # while real data, downsample the SU!
+                    if not is_real_data:
+                        batch_truth = [img.astype(np.float32) / 127.5 - 1 for img in batch_imgs]
+                        batch_SU = [imresize(img, scale, interp='bicubic') for img in batch_input]
+                    else:
+                        batch_truth = [imread(files_gt[i], mode='RGB').astype(np.float32) / 127.5 - 1 for i in sub_idx]
+                        batch_SU = [img.astype(np.float32) / 127.5 - 1 for img in batch_imgs]
+
                     batch_ref = [imread(files_ref[i], mode='RGB').astype(np.float32) for i in sub_idx]
                     batch_ref_lr = [imresize(img, 1 / scale, interp='bicubic') for img in batch_ref]
                     batch_ref_sr = [imresize(img, scale, interp='bicubic') for img in batch_ref_lr]
@@ -746,7 +759,7 @@ class SRNTT(object):
                         # batch_maps_tmp = [np.load(files_refs_map[i])['target_map'] for i in sub_idx]  # Mt from file
                     # --$
                     else:
-                        map_sr = self.net_vgg_hr.layers['relu3_1'].eval({self.ground_truth: batch_SU})
+                        map_sr = self.net_vgg_su.layers['relu3_1'].eval({self.SU: batch_SU})
                         styles = sess.run([self.net_vgg_ref.layers['relu3_1'],
                                            self.net_vgg_ref.layers['relu2_1'],
                                            self.net_vgg_ref.layers['relu1_1'],
@@ -848,13 +861,30 @@ class SRNTT(object):
                 step += 1
                 np.random.shuffle(idx)
                 for n_batch in xrange(num_batches):
+                    # step_time = time.time()
+                    # sub_idx = idx[n_batch * batch_size:n_batch * batch_size + batch_size]
+                    # batch_imgs = [imread(files_input[i], mode='RGB') for i in sub_idx]
+                    # batch_truth = [img.astype(np.float32) / 127.5 - 1 for img in batch_imgs]
+                    # batch_input = [imresize(img, 1 / scale, interp='bicubic').astype(np.float32) / 127.5 - 1 for img in
+                    #                batch_imgs]
+                    # batch_SU = [imresize(img, scale, interp='bicubic') for img in batch_input]
+                    #
+                    # batch_ref = [imread(files_ref[i], mode='RGB').astype(np.float32) for i in sub_idx]
+                    # batch_ref_lr = [imresize(img, 1 / scale, interp='bicubic') for img in batch_ref]
+                    # batch_ref_sr = [imresize(img, scale, interp='bicubic') for img in batch_ref_lr]
+
                     step_time = time.time()
                     sub_idx = idx[n_batch * batch_size:n_batch * batch_size + batch_size]
                     batch_imgs = [imread(files_input[i], mode='RGB') for i in sub_idx]
-                    batch_truth = [img.astype(np.float32) / 127.5 - 1 for img in batch_imgs]
                     batch_input = [imresize(img, 1 / scale, interp='bicubic').astype(np.float32) / 127.5 - 1 for img in
-                                   batch_imgs]
-                    batch_SU = [imresize(img, scale, interp='bicubic') for img in batch_input]
+                                   batch_imgs]  # while real data, downsample the SU!
+                    if not is_real_data:
+                        batch_truth = [img.astype(np.float32) / 127.5 - 1 for img in batch_imgs]
+                        batch_SU = [imresize(img, scale, interp='bicubic') for img in batch_input]
+                    else:
+                        batch_truth = [imread(files_gt[i], mode='RGB').astype(np.float32) / 127.5 - 1 for i in sub_idx]
+                        batch_SU = [img.astype(np.float32) / 127.5 - 1 for img in batch_imgs]
+
                     batch_ref = [imread(files_ref[i], mode='RGB').astype(np.float32) for i in sub_idx]
                     batch_ref_lr = [imresize(img, 1 / scale, interp='bicubic') for img in batch_ref]
                     batch_ref_sr = [imresize(img, scale, interp='bicubic') for img in batch_ref_lr]
@@ -863,7 +893,7 @@ class SRNTT(object):
                         batch_maps_tmp = [np.load(files_map[i])['target_map'] for i in sub_idx]  # Mt from file
                     # --$
                     else:
-                        map_sr = self.net_vgg_hr.layers['relu3_1'].eval({self.ground_truth: batch_SU})
+                        map_sr = self.net_vgg_su.layers['relu3_1'].eval({self.SU: batch_SU})
                         styles = sess.run([self.net_vgg_ref.layers['relu3_1'],
                                            self.net_vgg_ref.layers['relu2_1'],
                                            self.net_vgg_ref.layers['relu1_1'],

@@ -34,6 +34,9 @@ parser.add_argument('--num_res_blocks', type=int,
                     default=16, help='number of residual blocks')
 
 # train parameters
+parser.add_argument('--train_real_SU', type=str2bool,
+                    help='Train with real SU (in --input_dir), not that downsampled from gt.')
+
 parser.add_argument('--train_CE', type=str2bool, default=True, help='If true, train the param of content extracor')
 parser.add_argument('--load_pre_CE', type=str2bool, default=False,
                     help='If used, load the $step CE and upscale to init loading his when fail. Else use inited params')
@@ -45,11 +48,12 @@ parser.add_argument('--load_step', type=int, default=-1,
 parser.add_argument('--hot_start', type=str2bool,
                     default=True, help='train without map_321 files')
 parser.add_argument('--input_dir', type=str,
-                    default='data/test/input/ancient.jpg', help='dir of input images')
+                    default='data/test/input/ancient.jpg', help='dir of input or SU images')
 parser.add_argument('--ref_dir', type=str,
                     default='data/test/ref/ancient.jpg', help='dir of reference images')
 parser.add_argument('--map_dir', type=str, default='data/train/map_321',
                     help='dir of texture maps of reference images')
+parser.add_argument('--gt_dir',type=str,default='data/test/gt/ancient.jpg')
 parser.add_argument('--batch_size', type=int, default=9)
 parser.add_argument('--num_init_epochs', type=int, default=5)
 parser.add_argument('--num_epochs', type=int, default=50)
