@@ -95,7 +95,20 @@ echo
 #    --load_step 26 \
 #    --is_original_image True
 
-# test init hw
+## test init hw
+#python main.py \
+#    --input_dir data/test/input_hwtrain \
+#    --ref_dir data/test/ref_hwtrain \
+#    --x2_train \
+#    --is_train False \
+#    --use_init_model_only False \
+#    --result_dir results/hw_init_trainim2 \
+#    --save_dir model_hw_init \
+#    --load_step 28 \
+#    --is_original_image True \
+#    --cuda 0
+
+# test init real_hw
 python main.py \
     --input_dir data/test/input_hwtrain \
     --ref_dir data/test/ref_hwtrain \
@@ -103,7 +116,7 @@ python main.py \
     --is_train False \
     --use_init_model_only False \
     --result_dir results/hw_init_trainim2 \
-    --save_dir model_hw_init \
-    --load_step 28 \
+    --save_dir modelWithCE_hwReal_init \
+    --load_step 19 \
     --is_original_image True \
     --cuda 0

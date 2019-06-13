@@ -1205,6 +1205,8 @@ class SRNTT(object):
             # ********************************************************************************
             # *** load models
             # ********************************************************************************
+            # --If save_dir is None, load his CE. Otherwise, try to load your CE with load_step first,
+            # --then load his if failed
             config = tf.ConfigProto()
             config.gpu_options.allow_growth = False
             self.sess = tf.Session(config=config)
@@ -1248,6 +1250,13 @@ class SRNTT(object):
                     else:
                         logging.error('FAILED load %s' % model_path)
                         exit(0)
+                model_path = join(self.srntt_model_path, SRNTT_MODEL_NAMES['content_extractor'])
+                if files.load_and_assign_npz(
+                        sess=self.sess,
+                        name=model_path,
+                        network=self.net_upscale) is False:
+                    logging.error('FAILED load %s' % model_path)
+                    exit(0)
             else:
                 if use_init_model_only:
                     model_path = join(self.save_dir, MODEL_FOLDER, SRNTT_MODEL_NAMES['init'])
@@ -1273,6 +1282,25 @@ class SRNTT(object):
                     else:
                         logging.error('FAILED load %s' % model_path)
                         exit(0)
+
+                model_path = join(self.save_dir, MODEL_FOLDER,
+                                  '%d_' % (step,) + SRNTT_MODEL_NAMES['content_extractor'])  # --changed.
+                if files.load_and_assign_npz(
+                        sess=self.sess,
+                        name=model_path,
+                        network=self.net_upscale):
+                    logging.info('SUCCESS load %s' % model_path)
+                else:
+                    print('Failed to load your CE while testing, try to load his:')
+                    model_path = join(self.srntt_model_path, MODEL_FOLDER, SRNTT_MODEL_NAMES['content_extractor'])
+                    if files.load_and_assign_npz(
+                            sess=self.sess,
+                            name=model_path,
+                            network=self.net_upscale):
+                        logging.info('SUCCESS load %s' % model_path)
+                    else:
+                        raise ValueError('Failed to load your and his CE while testing!')
+
 
         logging.info('**********'
                      ' Start testing '
