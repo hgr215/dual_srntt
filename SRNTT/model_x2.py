@@ -993,7 +993,7 @@ class SRNTT(object):
                                  '\tl_rec = %.4f\tl_bp  = %.4f\n'
                                  '\tl_per = %.4f\tl_tex = %.4f\n'
                                  '\tl_adv = %.4f\tl_dis = %.4f' %
-                                 (step + 1, num_epochs, n_batch + 1, num_batches, eta_str,
+                                 (step+1, num_epochs+self.args.load_step+1, n_batch + 1, num_batches, eta_str,
                                   weights[4] * l_rec, weights[3] * l_bp,
                                   weights[0] * l_per, weights[1] * l_tex,
                                   weights[2] * l_adv, l_dis))
@@ -1218,15 +1218,6 @@ class SRNTT(object):
                                )  # --original swap.py should be changed.
             logging.info('Loading models ...')
             self.sess.run(tf.global_variables_initializer())
-
-            # load pre-trained content extractor, including upscaling.
-            model_path = join(self.srntt_model_path, SRNTT_MODEL_NAMES['content_extractor'])
-            if files.load_and_assign_npz(
-                    sess=self.sess,
-                    name=model_path,
-                    network=self.net_upscale) is False:
-                logging.error('FAILED load %s' % model_path)
-                exit(0)
 
             # load the specific conditional texture transfer model, specified by save_dir
             if self.save_dir is None:

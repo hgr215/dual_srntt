@@ -109,7 +109,45 @@ training_set=${1-dual_hw_real}
 ##    --patch_size 10 \
 ##    --stride 2
 
-# train from hw dataset (real)
+## train from hw dataset (real)
+#python main.py \
+#    --is_train True \
+#    --train_real_SU True \
+#    --input_dir data/train/dual_hw_real/SU \
+#    --ref_dir data/train/dual_hw_real/ref \
+#    --map_dir data/train/dual_hw_real/map_321_2x \
+#    --gt_dir data/train/dual_hw_real/gt \
+#    --load_pre_CE True \
+#    --load_pre_srntt False \
+#    --num_init_epochs 2 \
+#    --num_epochs 30 \
+#    --save_dir my_models/modelWithCE_hwReal_init_preCE \
+#    --x2_train \
+#    --patch_size 3 \
+#    --stride 1 \
+#    --cuda 0
+
+## train from hw dataset (real)  ---all transfer
+#python main.py \
+#    --is_train True \
+#    --train_real_SU True \
+#    --input_dir data/train/dual_hw_real/SU \
+#    --ref_dir data/train/dual_hw_real/ref \
+#    --map_dir data/train/dual_hw_real/map_321_2x \
+#    --gt_dir data/train/dual_hw_real/gt \
+#    --load_pre_CE True \
+#    --load_pre_srntt True \
+#    --train_CE True \
+#    --load_step 26 \
+#    --num_init_epochs 0 \
+#    --num_epochs 20 \
+#    --save_dir my_models/model_x2 \
+#    --x2_train \
+#    --patch_size 3 \
+#    --stride 1 \
+#    --cuda 3
+
+# train from hw dataset (real)  ---srntt init， CE fixed p10s2
 python main.py \
     --is_train True \
     --train_real_SU True \
@@ -119,11 +157,14 @@ python main.py \
     --gt_dir data/train/dual_hw_real/gt \
     --load_pre_CE True \
     --load_pre_srntt False \
+    --train_CE False \
     --num_init_epochs 2 \
-    --num_epochs 30 \
-    --save_dir my_models/modelWithCE_hwReal_init_preCE \
+    --num_epochs 20 \
+    --save_dir my_models/p10s5_srnttInit_CEFixed \
     --x2_train \
-    --patch_size 3 \
-    --stride 1 \
-    --cuda 0
+    --patch_size 10 \
+    --stride 5 \
+    --cuda 3
+
+python train2.py --cuda 3
 

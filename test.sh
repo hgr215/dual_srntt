@@ -108,15 +108,44 @@ echo
 #    --is_original_image True \
 #    --cuda 0
 
-# test init real_hw
+## test init real_hw
+#python main.py \
+#    --input_dir data/test/input_huawei \
+#    --ref_dir data/test/ref_huawei \
+#    --x2_train \
+#    --is_train False \
+#    --use_init_model_only False \
+#    --result_dir results/hw_init_hwTest \
+#    --save_dir my_models/modelWithCE_hwReal_init \
+#    --load_step 19 \
+#    --is_original_image True \
+#    --cuda 3
+
+## test init real_hw preCE
+#python main.py \
+#    --input_dir data/test/input_hwtrain \
+#    --ref_dir data/test/ref_hwtrain \
+#    --x2_train \
+#    --is_train False \
+#    --use_init_model_only False \
+#    --result_dir results/hw_init_preCE \
+#    --save_dir my_models/modelWithCE_hwReal_init_preCE \
+#    --load_step 24 \
+#    --is_original_image True \
+#    --cuda 3
+#
+
+# test all transfer real_hw preCE
 python main.py \
-    --input_dir data/test/input_hwtrain \
-    --ref_dir data/test/ref_hwtrain \
+    --input_dir data/test/input_huawei \
+    --ref_dir data/test/ref_huawei \
     --x2_train \
     --is_train False \
     --use_init_model_only False \
-    --result_dir results/hw_init_trainim2 \
-    --save_dir modelWithCE_hwReal_init \
-    --load_step 19 \
+    --result_dir results/hw_all_transfer_from26 \
+    --save_dir my_models/model_x2 \
+    --load_step 46 \
     --is_original_image True \
-    --cuda 0
+    --cuda 1
+
+python train2.py --cuda 1
